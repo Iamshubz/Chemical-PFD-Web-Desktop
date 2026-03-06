@@ -12,11 +12,14 @@ import Konva from "konva";
 import { CanvasItemImageProps } from "./types";
 import { calculateAspectFit } from "../../utils/layout";
 
+import { Rect } from "react-konva";
+
 const LABEL_OFFSET = 4;
 
 export const CanvasItemImage = ({
   item,
   isSelected,
+  isInvalid,
   onSelect,
   onChange,
   onDragEnd,
@@ -80,16 +83,25 @@ export const CanvasItemImage = ({
   const labelY = item.y + item.height + LABEL_OFFSET;
 
   // Calculate aspect-fit dimensions using shared helper
-  const { x: renderX, y: renderY, width: renderWidth, height: renderHeight } = calculateAspectFit(
+  const {
+    x: renderX,
+    y: renderY,
+    width: renderWidth,
+    height: renderHeight,
+  } = calculateAspectFit(
     item.width,
     item.height,
     image?.naturalWidth || item.naturalWidth,
-    image?.naturalHeight || item.naturalHeight
+    image?.naturalHeight || item.naturalHeight,
   );
 
   // Sync natural dimensions to item state for routing
   useEffect(() => {
-    if (image && (image.naturalWidth !== item.naturalWidth || image.naturalHeight !== item.naturalHeight)) {
+    if (
+      image &&
+      (image.naturalWidth !== item.naturalWidth ||
+        image.naturalHeight !== item.naturalHeight)
+    ) {
       onChange({
         ...item,
         naturalWidth: image.naturalWidth,
@@ -112,8 +124,16 @@ export const CanvasItemImage = ({
         scaleX={1}
         scaleY={1}
         onDragEnd={handleDragEnd}
-        onTransformEnd={handleTransformEnd}
-      >
+        onTransformEnd={handleTransformEnd}>
+        {isInvalid && (
+          <Rect
+            width={item.width}
+            height={item.height}
+            stroke="red"
+            strokeWidth={2}
+            dash={[6, 4]}
+          />
+        )}
         <KonvaImage
           height={renderHeight}
           image={image || undefined}
@@ -148,10 +168,10 @@ export const CanvasItemImage = ({
           keepRatio={true} // Enforce aspect ratio scaling
           flipEnabled={false} // Disable flipping to prevent negative scale issues
           enabledAnchors={[
-            'top-left',
-            'top-right',
-            'bottom-left',
-            'bottom-right',
+            "top-left",
+            "top-right",
+            "bottom-left",
+            "bottom-right",
           ]}
           boundBoxFunc={(oldBox, newBox) => {
             // Prevent shrinking too small
@@ -167,8 +187,9 @@ export const CanvasItemImage = ({
       {(isSelected || isDrawingConnection) &&
         item.grips?.map((grip, index) => {
           // Grips are positioned relative to the RENDERED image, not the container box
-          const gripX = (item.x + renderX) + (grip.x / 100) * renderWidth;
-          const gripY = (item.y + renderY) + ((100 - grip.y) / 100) * renderHeight;
+          const gripX = item.x + renderX + (grip.x / 100) * renderWidth;
+          const gripY =
+            item.y + renderY + ((100 - grip.y) / 100) * renderHeight;
 
           const isHovered =
             hoveredGrip?.itemId === item.id && hoveredGrip?.gripIndex === index;

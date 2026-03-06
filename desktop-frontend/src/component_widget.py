@@ -27,6 +27,11 @@ class ComponentWidget(QWidget):
         self.rotation_angle = 0
         self.drag_start_positions = {}
         
+        # Validation State
+        self.is_valid = True
+        self.critical_error = False  # True only for loops/flow errors, not isolated
+        self.validation_error_msg = ""
+        
         # Logical Coordinates (True 100% scale geometry)
         # Initialize from current geometry with proper aspect ratio
         self.logical_rect = QRectF(self.x(), self.y(), logical_width, logical_height)
@@ -251,6 +256,12 @@ class ComponentWidget(QWidget):
         return grips
 
     def paintEvent(self, event):
+        # Update tooltip: show error only for critical errors, label name for everything else
+        if getattr(self, "critical_error", False) and self.validation_error_msg:
+            self.setToolTip(self.validation_error_msg)
+        else:
+            self.setToolTip(self.config.get("default_label", self.config.get("name", "")))
+            
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
@@ -270,6 +281,29 @@ class ComponentWidget(QWidget):
             painter.setPen(QPen(QColor("#60a5fa"), 2.5))
             painter.setBrush(Qt.NoBrush)
             painter.drawRoundedRect(svg_rect.adjusted(1, 1, -1, -1), 6, 6)
+            
+        # Validation Error Indicator — only for critical errors (loops, broken flow)
+        if getattr(self, "critical_error", False):
+            err_color = QColor("#f87171") if app_state.current_theme == "dark" else QColor("#e53e3e")
+            
+            # Small badge: filled circle with '!' at top-right corner
+            badge_r = 7
+            badge_cx = int(svg_rect.right()) - badge_r + 2
+            badge_cy = int(svg_rect.top()) + badge_r - 2
+            badge_rect = QRectF(badge_cx - badge_r, badge_cy - badge_r, badge_r * 2, badge_r * 2)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(err_color)
+            painter.drawEllipse(badge_rect)
+            from PyQt5.QtGui import QFont
+            font = QFont()
+            font.setBold(True)
+            font.setPixelSize(9)
+            painter.setFont(font)
+            painter.setPen(QPen(Qt.white, 1.0))
+            painter.drawText(badge_rect, Qt.AlignCenter, "!")
+            painter.setPen(Qt.NoPen)
+
+
 
         # Label (drawn below SVG, within the extra LABEL_H space added by update_visuals)
         if self.config.get('default_label'):
@@ -283,6 +317,14 @@ class ComponentWidget(QWidget):
         grips = self.get_grips()
         for idx, grip in enumerate(grips):
             self.draw_dynamic_port(painter, grip, idx, svg_rect)
+
+    def enterEvent(self, event):
+        """Show error tooltip quickly; let OS handle normal tooltips at default speed."""
+        if getattr(self, "critical_error", False) and self.toolTip():
+            from PyQt5.QtCore import QTimer
+            from PyQt5.QtWidgets import QToolTip
+            QTimer.singleShot(100, lambda: QToolTip.showText(self.mapToGlobal(self.rect().center()), self.toolTip(), self))
+        super().enterEvent(event)
 
     def draw_dynamic_port(self, painter, grip, idx, svg_rect):
         """Draw port based on SVG viewBox coordinate mapping"""

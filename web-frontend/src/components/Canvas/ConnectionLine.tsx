@@ -1,30 +1,28 @@
 // src/components/Canvas/ConnectionLine.tsx
 
-import { Path, RegularPolygon } from "react-konva";
+import { Path, RegularPolygon, Circle } from "react-konva";
 import { KonvaEventObject } from "konva/lib/Node";
 
 import { Connection, CanvasItem } from "./types";
 
 interface ConnectionLineProps {
   connection: Connection;
-  // We now accept the pre-calculated path points as a prop
-  points: number[];
-  // We still pass items just in case you need them for other metadata,
-  // but strictly for drawing, we rely on 'points'
+  points: { x: number, y: number }[];
   items?: CanvasItem[];
   isSelected?: boolean;
   onSelect?: (e: KonvaEventObject<MouseEvent>) => void;
+  onWaypointDrag?: (index: number, pos: { x: number, y: number }) => void;
   arrowAngle?: number;
   targetPosition?: { x: number; y: number };
-  // Removed 'allConnections' since collision is now handled in the parent/utils
 }
 
 export const ConnectionLine = ({
   connection,
-  points: _points, // Unused
+  points,
   pathData,
   isSelected = false,
   onSelect,
+  onWaypointDrag,
   arrowAngle,
   targetPosition,
 }: ConnectionLineProps & { pathData?: string }) => {
@@ -89,6 +87,43 @@ export const ConnectionLine = ({
           y={targetPosition.y}
         />
       )}
+      {/* 4. DRAG HANDLES */}
+      {isSelected && points && points.map((p, i) => (
+        <Circle
+          key={i}
+          x={p.x}
+          y={p.y}
+          radius={6}
+          fill="#00e5ff"
+          stroke="#000"
+          strokeWidth={1}
+          draggable
+          onDragMove={(e) => {
+            const dx = Math.abs(e.target.x() - p.x);
+            const dy = Math.abs(e.target.y() - p.y);
+
+            // Lock axis based on which way they drag more for clean 90-degree wires
+            if (dx > dy) {
+              e.target.y(p.y);
+            } else {
+              e.target.x(p.x);
+            }
+
+            onWaypointDrag?.(i, {
+              x: e.target.x(),
+              y: e.target.y()
+            });
+          }}
+          onMouseEnter={(e) => {
+            const stage = e.target.getStage();
+            if (stage) stage.container().style.cursor = "move";
+          }}
+          onMouseLeave={(e) => {
+            const stage = e.target.getStage();
+            if (stage) stage.container().style.cursor = "default";
+          }}
+        />
+      ))}
     </>
   );
 };

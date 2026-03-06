@@ -28,11 +28,12 @@ import { TbGridDots, TbGridPattern } from "react-icons/tb";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { CanvasItemImage } from "@/components/Canvas/CanvasItemImage";
 import { ConnectionLine } from "@/components/Canvas/ConnectionLine";
+import { ConnectionPreview } from "@/components/Canvas/ConnectionPreview";
 import {
   ComponentLibrarySidebar,
   CanvasPropertiesSidebar,
 } from "@/components/Canvas/ComponentLibrarySidebar";
-import { calculateManualPathsWithBridges } from "@/utils/routing";
+import { calculateManualPathsWithBridges, smartRoute, getGripPosition, getStandoff } from "@/utils/routing";
 import { useComponents } from "@/context/ComponentContext";
 import ExportModal from "@/components/Canvas/ExportModal";
 // import { exportDiagram, downloadBlob } from "@/utils/exports";
@@ -66,6 +67,8 @@ import {
   createProject,
 } from "@/api/projectApi";
 import { convertToBackendFormat, SavedProject } from "@/utils/projectStorage";
+import { buildGraph } from "../utils/graph/buildGraph";
+import { validateGraph } from "../utils/graph/validateGraph";
 
 type Shortcut = {
   key: string;
@@ -251,6 +254,19 @@ export default function Editor() {
   const connections = useMemo(() => {
     return currentState?.connections || [];
   }, [currentState?.connections]);
+
+  // Graph validation state
+  const [validationResult, setValidationResult] = useState<any>(null);
+
+  // Rebuild graph and validate process structure whenever components or connections change
+  useEffect(() => {
+    if (!droppedItems || droppedItems.length === 0) return;
+
+    const graph = buildGraph(droppedItems, connections);
+    const result = validateGraph(graph);
+
+    setValidationResult(result);
+  }, [droppedItems, connections]);
 
   // Update all existing components when size slider changes
   useEffect(() => {
@@ -1324,12 +1340,30 @@ export default function Editor() {
       (tempConnection.sourceItemId !== itemId ||
         tempConnection.sourceGripIndex !== gripIndex)
     ) {
+      const sourceItem = droppedItems.find((i) => i.id === tempConnection.sourceItemId);
+      const targetItem = droppedItems.find((i) => i.id === itemId);
+
+      let initialWaypoints = tempConnection.waypoints || [];
+
+      if (initialWaypoints.length === 0 && sourceItem && targetItem) {
+        const start = getGripPosition(sourceItem, tempConnection.sourceGripIndex);
+        const end = getGripPosition(targetItem, gripIndex);
+        const sourceGrip = sourceItem.grips?.[tempConnection.sourceGripIndex];
+        const targetGrip = targetItem.grips?.[gripIndex];
+
+        if (start && end) {
+          const startStandoff = getStandoff(start, sourceGrip);
+          const endStandoff = getStandoff(end, targetGrip);
+          initialWaypoints = smartRoute(startStandoff, endStandoff, droppedItems);
+        }
+      }
+
       const newConnection = editorStore.addConnection(projectId, {
         sourceItemId: tempConnection.sourceItemId,
         sourceGripIndex: tempConnection.sourceGripIndex,
         targetItemId: itemId,
         targetGripIndex: gripIndex,
-        waypoints: tempConnection.waypoints,
+        waypoints: initialWaypoints,
       });
 
       setIsDrawingConnection(false);
@@ -1465,6 +1499,45 @@ export default function Editor() {
       );
     },
   );
+
+  // --- Preview Connection Logic ---
+  let previewPathData: string | null = null;
+  let previewEnd: any;
+  let previewAngle: number | undefined;
+
+  if (isDrawingConnection && tempConnection) {
+    const fakeTarget = {
+      id: -9999,
+      x: tempConnection.currentX,
+      y: tempConnection.currentY,
+      width: 1,
+      height: 1,
+      naturalWidth: 1,
+      naturalHeight: 1,
+      grips: [{ x: 50, y: 50 }],
+    };
+
+    const previewConn = {
+      id: -1,
+      sourceItemId: tempConnection.sourceItemId,
+      sourceGripIndex: tempConnection.sourceGripIndex,
+      targetItemId: -9999,
+      targetGripIndex: 0,
+      waypoints: tempConnection.waypoints,
+    };
+
+    const map = calculateManualPathsWithBridges(
+      [previewConn as any],
+      [...droppedItems, fakeTarget as any]
+    );
+
+    const meta = map[-1];
+    if (meta) {
+      previewPathData = meta.pathData ?? null;
+      previewEnd = meta.endPoint;
+      previewAngle = meta.arrowAngle;
+    }
+  }
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -1763,27 +1836,8 @@ export default function Editor() {
             onMouseDown={(e) => {
               const clickedOnEmpty = e.target === e.target.getStage();
 
-              if (clickedOnEmpty && isDrawingConnection && tempConnection) {
-                const stage = stageRef.current;
-
-                if (stage) {
-                  const pointer = stage.getRelativePointerPosition();
-
-                  if (pointer) {
-                    setTempConnection((prev: any) =>
-                      prev
-                        ? {
-                          ...prev,
-                          waypoints: [
-                            ...prev.waypoints,
-                            { x: pointer.x, y: pointer.y },
-                          ],
-                        }
-                        : prev,
-                    );
-                  }
-                }
-
+              if (clickedOnEmpty && isDrawingConnection) {
+                handleCancelDrawing();
                 return;
               }
 
@@ -1824,8 +1878,14 @@ export default function Editor() {
                   isSelected={selectedConnectionIds.has(connection.id)}
                   items={droppedItems}
                   pathData={connectionPaths[connection.id]?.pathData}
-                  points={[]}
+                  points={connectionPaths[connection.id]?.waypoints || []}
                   targetPosition={connectionPaths[connection.id]?.endPoint}
+                  onWaypointDrag={(index: number, pos: { x: number, y: number }) => {
+                    if (!projectId) return;
+                    const newWaypoints = [...(connectionPaths[connection.id]?.waypoints || [])];
+                    newWaypoints[index] = pos;
+                    editorStore.updateConnection(projectId, connection.id, { waypoints: newWaypoints });
+                  }}
                   onSelect={(e: Konva.KonvaEventObject<MouseEvent>) => {
                     const isCtrl = e?.evt.ctrlKey || e?.evt.metaKey;
 
@@ -1846,39 +1906,40 @@ export default function Editor() {
               ))}
 
               {/* Render Temporary Connection Line (Drawing) */}
-              {tempConnection && (
-                <Line
-                  dash={[10, 5]}
-                  listening={false}
-                  points={[
-                    tempConnection.startX,
-                    tempConnection.startY,
-                    ...tempConnection.waypoints.flatMap((p) => [p.x, p.y]),
-                    tempConnection.currentX,
-                    tempConnection.currentY,
-                  ]}
-                  stroke="#9ca3af"
-                  strokeWidth={2}
+              {isDrawingConnection && tempConnection && (
+                <ConnectionPreview
+                  pathData={previewPathData}
+                  endPoint={previewEnd}
+                  arrowAngle={previewAngle}
                 />
               )}
 
               {/* Render Components */}
-              {droppedItems.map((item: CanvasItem) => (
-                <CanvasItemImage
-                  key={item.id}
-                  hoveredGrip={hoveredGrip}
-                  isDrawingConnection={isDrawingConnection}
-                  isSelected={selectedItemIds.has(item.id)}
-                  item={item}
-                  onChange={(newAttrs) =>
-                    handleUpdateItem(newAttrs.id, newAttrs)
-                  }
-                  onGripMouseDown={handleGripMouseDown}
-                  onGripMouseEnter={handleGripMouseEnter}
-                  onGripMouseLeave={handleGripMouseLeave}
-                  onSelect={(e) => handleSelectItem(item.id, e)}
-                />
-              ))}
+              {droppedItems.map((item: CanvasItem) => {
+                const isInvalid =
+                  validationResult &&
+                  (validationResult.isolated.includes(item.id) ||
+                    validationResult.circular.includes(item.id) ||
+                    validationResult.brokenFlow.includes(item.id));
+
+                return (
+                  <CanvasItemImage
+                    key={item.id}
+                    hoveredGrip={hoveredGrip}
+                    isDrawingConnection={isDrawingConnection}
+                    isSelected={selectedItemIds.has(item.id)}
+                    isInvalid={isInvalid}
+                    item={item}
+                    onChange={(newAttrs) =>
+                      handleUpdateItem(newAttrs.id, newAttrs)
+                    }
+                    onGripMouseDown={handleGripMouseDown}
+                    onGripMouseEnter={handleGripMouseEnter}
+                    onGripMouseLeave={handleGripMouseLeave}
+                    onSelect={(e) => handleSelectItem(item.id, e)}
+                  />
+                );
+              })}
             </Layer>
           </Stage>
 
@@ -1957,8 +2018,8 @@ export default function Editor() {
                           "bg-gradient-to-r from-blue-200 to-blue-400 dark:from-blue-800 dark:to-blue-600",
                         thumb: "bg-blue-600 dark:bg-blue-500",
                       }}
-                       maxValue={8000}
-                        minValue={2000}
+                      maxValue={8000}
+                      minValue={2000}
                       size="sm"
                       step={100}
                       value={componentSize}
@@ -2083,8 +2144,7 @@ export default function Editor() {
                 </span>
                 <div className="w-px h-3 bg-white/20" />
                 <span className="text-white/80 text-xs">
-                  Click empty space to add corner • Click target point to finish
-                  • Press Esc to cancel
+                  Click target point to finish • Press Esc to cancel
                 </span>
               </div>
             </div>
@@ -2186,6 +2246,46 @@ export default function Editor() {
           onClose={() => setShowNewProjectModal(false)}
           onCreate={handleCreateNewProject}
         />
+        {validationResult &&
+          (!validationResult.hasInlet ||
+            !validationResult.hasOutlet ||
+            validationResult.isolated.length > 0 ||
+            validationResult.circular.length > 0 ||
+            validationResult.brokenFlow.length > 0) && (
+            <div className="absolute bottom-6 right-6 bg-white border border-red-300 shadow-xl px-4 py-2 rounded text-sm z-[9999] space-y-1">
+              {!validationResult.hasInlet && (
+                <div className="text-red-600 font-medium">
+                  ⚠ No Inlet Component Found
+                </div>
+              )}
+
+              {!validationResult.hasOutlet && (
+                <div className="text-red-600 font-medium">
+                  ⚠ No Outlet Component Found
+                </div>
+              )}
+
+              {validationResult.isolated.length > 0 && (
+                <div className="text-red-600 font-medium">
+                  ⚠ {validationResult.isolated.length} Isolated Component(s)
+                </div>
+              )}
+
+              {validationResult.circular.length > 0 && (
+                <div className="text-red-600 font-medium">
+                  ⚠ {validationResult.circular.length} Component(s) in Circular
+                  Loop
+                </div>
+              )}
+
+              {validationResult.brokenFlow.length > 0 && (
+                <div className="text-red-600 font-medium">
+                  ⚠ {validationResult.brokenFlow.length} Component(s) with
+                  Broken Flow
+                </div>
+              )}
+            </div>
+          )}
       </div>
     </div>
   );

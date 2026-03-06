@@ -47,6 +47,8 @@ class OverlayContainer(QWidget):
         layout.setContentsMargins(0, 0, 20, 20)
 
 
+
+
 class ImageSubWindow(QMdiSubWindow):
     def __init__(self, image_path, parent=None):
         super().__init__(parent)
@@ -422,6 +424,9 @@ class CanvasScreen(QMainWindow):
                     "Project loaded but some components may be missing."
                 )
         
+        # Run initial validation
+        canvas.run_validation()
+        
         # Mark as clean after loading
         canvas.undo_stack.setClean()
         canvas.is_modified = False
@@ -748,6 +753,8 @@ class CanvasScreen(QMainWindow):
                     canvas._is_loading = False
                     QtWidgets.QMessageBox.warning(self, "Error", "Failed to load file.")
                     return False
+                # Run validation after loading pfd content
+                canvas.run_validation()
             except Exception as e:
                 canvas._is_loading = False
                 QtWidgets.QMessageBox.critical(self, "Error", f"Failed to open file:\n{str(e)}")

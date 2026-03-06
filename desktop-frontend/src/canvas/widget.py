@@ -10,7 +10,7 @@ from src.component_widget import ComponentWidget
 import src.app_state as app_state
 from src.canvas import resources, painter
 from src.canvas.commands import AddCommand, DeleteCommand, MoveCommand, AddConnectionCommand
-
+from src.canvas.validation import GraphValidator
 
 
 class CanvasWidget(QWidget):
@@ -47,6 +47,7 @@ class CanvasWidget(QWidget):
         self.file_path = None
         self.is_modified = False
         self.undo_stack.cleanChanged.connect(self.on_undo_stack_changed)
+        self.undo_stack.indexChanged.connect(self.run_validation)
 
         # Configs
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -61,7 +62,58 @@ class CanvasWidget(QWidget):
         from src.theme_manager import theme_manager
         theme_manager.theme_changed.connect(self.update_canvas_theme)
         self.update_canvas_theme()
-    
+        
+        # Validation State
+        self.validation_errors = {
+            "isolated": [],
+            "loops": [],
+            "flow_errors": [],
+            "missing_inlet": False,
+            "missing_outlet": False
+        }
+        
+    def run_validation(self):
+        """Re-evaluates the canvas state for graph errors matching PFD rules."""
+        validator = GraphValidator(self.components, self.connections)
+        result = validator.validate()
+        self.validation_errors = result
+
+        # Update component error states
+        for comp in self.components:
+            comp.is_valid = True
+            comp.critical_error = False
+            comp.validation_error_msg = ""
+
+            error_msgs = []
+            if comp in self.validation_errors["isolated"]:
+                comp.is_valid = False
+                error_msgs.append("Isolated component (no connections).")
+            if comp in self.validation_errors["loops"]:
+                comp.is_valid = False
+                comp.critical_error = True
+                error_msgs.append("Circular loop detected.")
+            elif comp in self.validation_errors["flow_errors"]:
+                comp.is_valid = False
+                comp.critical_error = True
+                # Build a specific message depending on which side is broken
+                no_inlet  = comp in self.validation_errors.get("unreachable_from_inlet", [])
+                no_outlet = comp in self.validation_errors.get("cant_reach_outlet", [])
+                if no_inlet and no_outlet:
+                    error_msgs.append("No path from any inlet or to any outlet.")
+                elif no_inlet:
+                    error_msgs.append("No path from any inlet to this component.")
+                elif no_outlet:
+                    error_msgs.append("No path from this component to any outlet.")
+
+            if error_msgs:
+                comp.validation_error_msg = "\n".join(error_msgs)
+
+            comp.update()
+
+
+        # Trigger re-paint on the main canvas (e.g. for global warning indicators)
+        self.update()
+
     def expand_to_contain(self, rect):
         """Expand logical size if rect is outside current bounds."""
         margin = 500 # Expansion chunk
@@ -426,6 +478,7 @@ class CanvasWidget(QWidget):
             cmd = DeleteCommand(self, to_del_comps, all_conns_to_del)
             self.undo_stack.push(cmd)
         
+        self.run_validation()
         self.update()
 
     def handle_connection_release(self, pos):
@@ -443,6 +496,7 @@ class CanvasWidget(QWidget):
                 self.undo_stack.push(cmd)
             
             self.active_connection = None
+            self.run_validation()
             self.update()
 
     # ---------------------- PAINT EVENT ----------------------
@@ -553,13 +607,9 @@ class CanvasWidget(QWidget):
         
         # Add Command uses LOGICAL pos?
         # MoveCommand uses Visual? 
-        # CAUTION: Commands usually store what was passed.
-        # If we store logical, we should ensure MoveCommand respects it.
-        # Actually comp is already positioned. AddCommand just tracks it.
         cmd = AddCommand(self, comp, logical_pos)
         self.undo_stack.push(cmd)
-
-    # ---------------------- EXPORT ----------------------
+        self.run_validation()
     def export_to_pdf(self, filename):
         from src.canvas.commands import export_pdf
         export_pdf(self, filename)
