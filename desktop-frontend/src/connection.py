@@ -30,9 +30,9 @@ class Connection:
         self.end_adjust = 0.0 # Moves the end stub (pe)
         
         # Auto-Router Integration
-        # NOTE: Auto-router temporarily disabled due to BFS pathfinding complexity
-        # Using enhanced rule-based routing with orthogonality enforcement instead
-        self.use_auto_router = False  # Disabled - using rule-based with orthogonal enforcement
+        # Keep enabled by default so both dragged and finalized connections
+        # prefer obstacle-aware routing.
+        self.use_auto_router = True
         self.auto_router = AutoRouter(grid_resolution=10)  # Grid size: 10px
 
     def set_end_grip(self, component, grip_index, side):
@@ -164,8 +164,11 @@ class Connection:
         # Convert to our path format and add start/end stubs
         raw_path = self._add_stubs_to_grid_path(path_points)
         
-        # CRITICAL: Ensure perfect orthogonality even for auto-routed paths
-        self.path = self._ensure_orthogonal_path(raw_path)
+        # Ensure strict orthogonality and run a final obstacle-avoidance pass
+        # to prevent stub segments from clipping through nearby components.
+        points = self._ensure_orthogonal_path(raw_path)
+        points = self._avoid_components(points, components)
+        self.path = self._simplify_path(points)
     
     def _calculate_path_rule_based(self, obstacles=None):
         """
@@ -612,7 +615,8 @@ class Connection:
             return points
 
         routed = list(points)
-        for _ in range(2):
+        max_passes = max(2, len(blocked_components) + 1)
+        for _ in range(max_passes):
             changed = False
             result = [routed[0]]
             for i in range(len(routed) - 1):
@@ -621,7 +625,7 @@ class Connection:
 
                 detoured = False
                 for comp in blocked_components:
-                    rect = comp.logical_rect.adjusted(-10, -10, 10, 10)
+                    rect = comp.logical_rect.adjusted(-14, -14, 14, 14)
                     detour_path = self._detour_segment_around_rect(p1, p2, rect)
                     if detour_path:
                         for pt in detour_path[1:]:
