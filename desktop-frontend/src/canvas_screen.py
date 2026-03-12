@@ -2,7 +2,7 @@ import os
 from PyQt5 import QtWidgets
 from PyQt5.QtGui import QColor, QBrush, QKeySequence
 from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QShortcut, QMdiSubWindow, QSplitter
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 
 from src.canvas.widget import CanvasWidget
 from src.component_library import ComponentLibrary
@@ -44,6 +44,8 @@ class OverlayContainer(QWidget):
         btn_layout.addWidget(self.zoom_in_btn)
         
         layout.addWidget(self.toolbar_frame, 0, 0, Qt.AlignBottom | Qt.AlignRight)
+        layout.setContentsMargins(0, 0, 20, 20)
+        
         layout.setContentsMargins(0, 0, 20, 20)
 
 
@@ -278,12 +280,12 @@ class CanvasScreen(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.setHandleWidth(2)
-        splitter.setStyleSheet("QSplitter::handle { background-color: #e2e8f0; }")
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.setHandleWidth(2)
+        self.splitter.setStyleSheet("QSplitter::handle { background-color: #e2e8f0; }")
 
         self.library = ComponentLibrary(self)
-        self.library.setMinimumWidth(200)
+        self.library.setMinimumWidth(360)
         
         self.mdi_area = QtWidgets.QMdiArea()
         self.mdi_area.setViewMode(QtWidgets.QMdiArea.TabbedView)
@@ -291,13 +293,15 @@ class CanvasScreen(QMainWindow):
         self.mdi_area.setTabsMovable(True)
         self.mdi_area.setBackground(QBrush(QColor("#505050")))
 
-        splitter.addWidget(self.library)
-        splitter.addWidget(self.mdi_area)
+        self.splitter.addWidget(self.library)
+        self.splitter.addWidget(self.mdi_area)
         
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
         
-        main_layout.addWidget(splitter)
+        main_layout.addWidget(self.splitter)
+
+        QTimer.singleShot(0, self._apply_default_library_size)
 
         theme_manager.theme_changed.connect(self.apply_mdi_theme)
         self.apply_mdi_theme(theme_manager.current_theme)
@@ -420,6 +424,9 @@ class CanvasScreen(QMainWindow):
                     "Project loaded but some components may be missing."
                 )
         
+        # Run initial validation
+        canvas.run_validation()
+        
         # Mark as clean after loading
         canvas.undo_stack.setClean()
         canvas.is_modified = False
@@ -439,6 +446,17 @@ class CanvasScreen(QMainWindow):
         self.mdi_area.addSubWindow(sub)
         sub.setWindowTitle(f"{app_state.current_project_name}")
         sub.showMaximized()
+
+        if is_freshly_created:
+            QTimer.singleShot(0, self._apply_default_library_size)
+
+    def _apply_default_library_size(self):
+        target_width = 360
+        total_width = self.splitter.size().width() or self.width()
+        if total_width <= 0:
+            total_width = 1200
+        right_width = max(0, total_width - target_width)
+        self.splitter.setSizes([target_width, right_width])
         
     def open_project_from_backend(self, project_id):
         """Load and open a project from backend by ID."""
@@ -480,6 +498,45 @@ class CanvasScreen(QMainWindow):
             self.library.reload_components()
 
     def on_back_home(self):
+        active_sub = self.mdi_area.currentSubWindow()
+        if not active_sub or not isinstance(active_sub, CanvasSubWindow):
+            slide_to_index(3, direction=-1)
+            return
+
+        canvas = active_sub.get_canvas()
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Back to Home",
+            "Do you want to save the current file or discard it?",
+            QtWidgets.QMessageBox.Save | QtWidgets.QMessageBox.Discard | QtWidgets.QMessageBox.Cancel,
+            QtWidgets.QMessageBox.Save,
+        )
+
+        if reply == QtWidgets.QMessageBox.Cancel:
+            return
+
+        if reply == QtWidgets.QMessageBox.Save:
+            saved = self.on_save_as_file()
+            if not saved:
+                return
+            if hasattr(canvas, "undo_stack"):
+                canvas.undo_stack.setClean()
+            canvas.is_modified = False
+
+        if reply == QtWidgets.QMessageBox.Discard:
+            if getattr(canvas, "is_new_project", False) and getattr(canvas, "project_id", None):
+                from src.api_client import delete_project
+                delete_project(canvas.project_id)
+
+        self._close_current_project()
+
+    def _close_current_project(self):
+        self.mdi_area.closeAllSubWindows()
+        if self.mdi_area.subWindowList():
+            return
+        app_state.current_project_id = None
+        app_state.current_project_name = None
+        app_state.pending_project_id = None
         slide_to_index(3, direction=-1)
 
     def _register_shortcuts(self):
@@ -696,6 +753,8 @@ class CanvasScreen(QMainWindow):
                     canvas._is_loading = False
                     QtWidgets.QMessageBox.warning(self, "Error", "Failed to load file.")
                     return False
+                # Run validation after loading pfd content
+                canvas.run_validation()
             except Exception as e:
                 canvas._is_loading = False
                 QtWidgets.QMessageBox.critical(self, "Error", f"Failed to open file:\n{str(e)}")

@@ -63,13 +63,14 @@ class RecentProjectItem(QWidget):
     def __init__(self, project_id, project_name, last_opened, parent=None):
         super().__init__(parent)
 
+        self.setObjectName("recentProjectItem")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setCursor(Qt.PointingHandCursor)
         self.project_id = project_id
         self.project_name = project_name
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(15)
 
         # Icon

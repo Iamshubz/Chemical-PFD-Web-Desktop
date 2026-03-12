@@ -1,6 +1,7 @@
 from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, QLineF, QSizeF
 from PyQt5.QtGui import QPainterPath, QColor, QPen, QBrush, QPolygonF
 import math
+from src.auto_router import AutoRouter
 
 class Connection:
     def __init__(self, start_component, start_grip_index, start_side):
@@ -27,6 +28,12 @@ class Connection:
         self.path_offset = 0.0 # Moves the middle segment
         self.start_adjust = 0.0 # Moves the start stub (ns)
         self.end_adjust = 0.0 # Moves the end stub (pe)
+        
+        # Auto-Router Integration
+        # NOTE: Auto-router temporarily disabled due to BFS pathfinding complexity
+        # Using enhanced rule-based routing with orthogonality enforcement instead
+        self.use_auto_router = False  # Disabled - using rule-based with orthogonal enforcement
+        self.auto_router = AutoRouter(grid_resolution=10)  # Grid size: 10px
 
     def set_end_grip(self, component, grip_index, side):
         self.end_component = component
@@ -88,12 +95,88 @@ class Connection:
                         return i
         return -1
 
-    def calculate_path(self, obstacles=None):
+    def calculate_path(self, components=None, other_connections=None, use_auto_router=None):
         """
-        Ports the Rule-Based Orthogonal Routing logic from the reference project.
+        Calculate connection path with optional smart auto-routing.
+        
+        Args:
+            components: List of all components in canvas (for obstacle detection)
+            other_connections: List of other connections (for collision detection)
+            use_auto_router: Override auto-router setting (if None, use self.use_auto_router)
+        
+        Strategy:
+        1. If auto_router is enabled and components provided:
+           - Use BFS-based grid pathfinding with obstacle avoidance
+        2. Otherwise:
+           - Use rule-based heuristic routing (original logic)
+        """
+        # CRITICAL: Clear existing path completely to prevent stretching/partial updates
+        self.path = []
+        self.painter_path = QPainterPath()
+        
+        # Determine routing mode
+        should_use_auto_router = use_auto_router if use_auto_router is not None else self.use_auto_router
+        
+        if should_use_auto_router and components:
+            self._calculate_path_with_auto_router(components, other_connections)
+        else:
+            self._calculate_path_rule_based()
+    
+    def _calculate_path_with_auto_router(self, components, other_connections=None):
+        """
+        Smart auto-routing using BFS pathfinding on a grid.
+        
+        Process:
+        1. Set up grid obstacles for all components
+        2. Add existing connections as obstacles
+        3. Use BFS to find shortest orthogonal path
+        4. Convert grid path to visual path points
+        """
+        # Reset router and obstacles
+        self.auto_router.clear_obstacles()
+        
+        # Add all component rectangles as obstacles
+        for comp in components:
+            if comp == self.start_component or comp == self.end_component:
+                continue  # Don't block start/end components
+            if hasattr(comp, 'logical_rect'):
+                self.auto_router.add_component_obstacle(comp.logical_rect)
+        
+        # Add existing connection segments as obstacles (optional - can be toggled)
+        if other_connections:
+            for conn in other_connections:
+                if conn == self:
+                    continue
+                if len(conn.path) >= 2:
+                    for i in range(len(conn.path) - 1):
+                        self.auto_router.add_connection_obstacle(conn.path[i], conn.path[i+1])
+        
+        # Get start and end positions
+        start_point = QPointF(self.get_start_pos())
+        end_point = QPointF(self.get_end_pos())
+        
+        # Calculate scene bounds (for pathfinding limit)
+        scene_bounds = self._calculate_scene_bounds(components)
+        
+        # Find shortest orthogonal path
+        path_points = self.auto_router.find_path(start_point, end_point, scene_bounds)
+        
+        # Convert to our path format and add start/end stubs
+        raw_path = self._add_stubs_to_grid_path(path_points)
+        
+        # CRITICAL: Ensure perfect orthogonality even for auto-routed paths
+        self.path = self._ensure_orthogonal_path(raw_path)
+    
+    def _calculate_path_rule_based(self):
+        """
+        Original rule-based orthogonal routing logic.
         Determines the path points based on start/end positions and grip directions.
+        
+        This is the fallback/default routing strategy when auto-router is disabled.
+        Ports the logic from the reference project.
+        
+        IMPORTANT: All intermediate points are strictly aligned to ensure perfect orthogonality.
         """
-        self.path = [] # Reset
         start_point = QPointF(self.get_start_pos())
         points = [start_point]
         end_point = QPointF(self.get_end_pos())
@@ -290,6 +373,75 @@ class Connection:
         self.path = self._simplify_path(points)
 
 
+    def _ensure_orthogonal_path(self, points: list) -> list:
+        """
+        Ensure all path segments are perfectly horizontal or vertical.
+        
+        This method converts any diagonal segments into proper orthogonal segments
+        by adding intermediate corner points where needed.
+        
+        Args:
+            points: List of QPointF representing the path
+        
+        Returns:
+            List of QPointF with guaranteed orthogonal segments
+        """
+        if len(points) < 2:
+            return points
+        
+        orthogonal_points = [points[0]]
+        
+        for i in range(1, len(points)):
+            prev = orthogonal_points[-1]
+            curr = points[i]
+            
+            dx = abs(curr.x() - prev.x())
+            dy = abs(curr.y() - prev.y())
+            
+            # Check if segment is already orthogonal (purely horizontal or vertical)
+            if dx < 0.1:  # Vertical segment
+                orthogonal_points.append(QPointF(prev.x(), curr.y()))
+            elif dy < 0.1:  # Horizontal segment
+                orthogonal_points.append(QPointF(curr.x(), prev.y()))
+            else:
+                # Diagonal segment - need to add corner point
+                # Decide routing based on which direction is dominant
+                # and what makes sense for the connection flow
+                
+                # Look ahead if possible to determine best routing
+                if i < len(points) - 1:
+                    next_pt = points[i + 1]
+                    dx_next = abs(next_pt.x() - curr.x())
+                    dy_next = abs(next_pt.y() - curr.y())
+                    
+                    # Choose direction that aligns better with next segment
+                    if dx_next < dy_next:
+                        # Next segment is more vertical, go horizontal first
+                        orthogonal_points.append(QPointF(curr.x(), prev.y()))
+                        orthogonal_points.append(QPointF(curr.x(), curr.y()))
+                    else:
+                        # Next segment is more horizontal, go vertical first
+                        orthogonal_points.append(QPointF(prev.x(), curr.y()))
+                        orthogonal_points.append(QPointF(curr.x(), curr.y()))
+                else:
+                    # Last segment - choose based on which direction is larger
+                    if dx > dy:
+                        # Go horizontal first, then vertical
+                        orthogonal_points.append(QPointF(curr.x(), prev.y()))
+                        orthogonal_points.append(QPointF(curr.x(), curr.y()))
+                    else:
+                        # Go vertical first, then horizontal
+                        orthogonal_points.append(QPointF(prev.x(), curr.y()))
+                        orthogonal_points.append(QPointF(curr.x(), curr.y()))
+        
+        # Remove duplicate consecutive points
+        filtered_points = [orthogonal_points[0]]
+        for i in range(1, len(orthogonal_points)):
+            if (abs(orthogonal_points[i].x() - filtered_points[-1].x()) > 0.1 or 
+                abs(orthogonal_points[i].y() - filtered_points[-1].y()) > 0.1):
+                filtered_points.append(orthogonal_points[i])
+        
+        return filtered_points
 
     def _guess_approach_side(self, start, end):
         # Heuristic to guess optimal entry side when dragging freely
@@ -300,6 +452,150 @@ class Connection:
             return "left" if dx > 0 else "right" # Entering from left means target is to right
         else:
             return "top" if dy > 0 else "bottom"
+    
+    def _add_stubs_to_grid_path(self, grid_path: list) -> list:
+        """
+        Enhance grid-based path with directional stubs from grips.
+        
+        The grid path provides the main routing, but we add:
+        - Start stub from grip in grip direction
+        - End stub approaching grip from specified direction
+        
+        Args:
+            grid_path: Path points from BFS pathfinding
+        
+        Returns:
+            Enhanced path with stubs (may need orthogonality enforcement after)
+        """
+        if len(grid_path) < 2:
+            return grid_path
+        
+        # Get start position with stub
+        start_point = QPointF(self.get_start_pos())
+        off_start = max(10.0, 30.0 + self.start_adjust)
+        
+        # Add start stub based on start_side direction
+        ns = QPointF()
+        if self.start_side == "top":
+            ns = QPointF(start_point.x(), start_point.y() - off_start)
+        elif self.start_side == "bottom":
+            ns = QPointF(start_point.x(), start_point.y() + off_start)
+        elif self.start_side == "left":
+            ns = QPointF(start_point.x() - off_start, start_point.y())
+        elif self.start_side == "right":
+            ns = QPointF(start_point.x() + off_start, start_point.y())
+        else:
+            ns = QPointF(start_point.x() + off_start, start_point.y())
+        
+        # Get end position with stub
+        end_point = QPointF(self.get_end_pos())
+        off_end = max(10.0, 20.0 + self.end_adjust)
+        
+        # Determine approach side for end
+        target_side = self.end_side
+        if not target_side and self.snap_side:
+            target_side = self.snap_side
+        if not target_side:
+            target_side = self._guess_approach_side(start_point, end_point)
+        
+        # Add end stub
+        pe = QPointF()
+        if target_side == "top":
+            pe = QPointF(end_point.x(), end_point.y() - off_end)
+        elif target_side == "bottom":
+            pe = QPointF(end_point.x(), end_point.y() + off_end)
+        elif target_side == "left":
+            pe = QPointF(end_point.x() - off_end, end_point.y())
+        elif target_side == "right":
+            pe = QPointF(end_point.x() + off_end, end_point.y())
+        else:
+            pe = QPointF(end_point.x() - off_end, end_point.y())
+        
+        # Construct final path with proper orthogonal connections
+        final_path = [start_point, ns]
+        
+        # Add intermediate point to connect ns to grid_path orthogonally
+        if len(grid_path) > 0:
+            first_grid = grid_path[0]
+            
+            # Create orthogonal connection from ns to first grid point
+            # Check which direction the stub goes
+            if abs(ns.x() - start_point.x()) < 0.1:
+                # Vertical stub, create horizontal connection to grid
+                bridge = QPointF(first_grid.x(), ns.y())
+                if abs(bridge.x() - ns.x()) > 1.0:  # Only add if needed
+                    final_path.append(bridge)
+            else:
+                # Horizontal stub, create vertical connection to grid
+                bridge = QPointF(ns.x(), first_grid.y())
+                if abs(bridge.y() - ns.y()) > 1.0:  # Only add if needed
+                    final_path.append(bridge)
+        
+        # Add all grid path points
+        final_path.extend(grid_path)
+        
+        # Add intermediate point to connect grid_path to pe orthogonally
+        if len(grid_path) > 0:
+            last_grid = grid_path[-1]
+            
+            # Create orthogonal connection from last grid point to pe
+            if abs(pe.x() - end_point.x()) < 0.1:
+                # Vertical end stub, create horizontal connection from grid
+                bridge = QPointF(pe.x(), last_grid.y())
+                if abs(bridge.x() - last_grid.x()) > 1.0:  # Only add if needed
+                    final_path.append(bridge)
+            else:
+                # Horizontal end stub, create vertical connection from grid
+                bridge = QPointF(last_grid.x(), pe.y())
+                if abs(bridge.y() - last_grid.y()) > 1.0:  # Only add if needed
+                    final_path.append(bridge)
+        
+        final_path.extend([pe, end_point])
+        
+        return final_path
+    
+    def _calculate_scene_bounds(self, components) -> QRectF:
+        """
+        Calculate bounding box of all components to limit pathfinding scope.
+        
+        Args:
+            components: List of all components
+        
+        Returns:
+            QRectF representing scene bounds with padding
+        """
+        if not components:
+            return QRectF(0, 0, 10000, 10000)  # Default large bounds
+        
+        # Find min/max coordinates
+        min_x = float('inf')
+        min_y = float('inf')
+        max_x = float('-inf')
+        max_y = float('-inf')
+        
+        for comp in components:
+            if hasattr(comp, 'logical_rect'):
+                rect = comp.logical_rect
+            else:
+                rect = QRectF(comp.pos(), comp.size() if hasattr(comp, 'size') else (100, 60))
+            
+            min_x = min(min_x, rect.x())
+            min_y = min(min_y, rect.y())
+            max_x = max(max_x, rect.right())
+            max_y = max(max_y, rect.bottom())
+        
+        # Add padding
+        padding = 500
+        return QRectF(
+            min_x - padding,
+            min_y - padding,
+            max_x - min_x + padding * 2,
+            max_y - min_y + padding * 2
+        )
+    
+    def enable_auto_router(self, enable: bool = True):
+        """Enable or disable smart auto-routing for this connection."""
+        self.use_auto_router = enable
 
     def _avoid_components(self, points, obstacles):
         if not obstacles or len(points) < 2:
@@ -421,7 +717,7 @@ class Connection:
         1. Calculate Orthogonal Path (points)
         2. Generate visual path with Jumps (QPainterPath)
         """
-        self.calculate_path(components)
+        self.calculate_path(components, other_connections)
         self._generate_jump_path(other_connections)
 
     def _generate_jump_path(self, other_connections):

@@ -191,16 +191,27 @@ QWidget[theme="light"] QLabel#cardDesc, QWidget QLabel#cardDesc {
 
 QWidget#recentContainer {
     border-radius: 6px;
-    padding: 10px;
+    padding: 4px;
 }
 
 QWidget[theme="light"] QWidget#recentContainer, QWidget QWidget#recentContainer {
-    background-color: #ffffff;
+    background-color: transparent;
+    border: none;
+}
+
+QWidget#recentProjectItem {
+    border-radius: 8px;
+    margin: 2px 0px;
+}
+
+QWidget[theme="light"] QWidget#recentProjectItem, QWidget QWidget#recentProjectItem {
+    background-color: #f4e8dc;
     border: 1px solid #C97B5A;
 }
 
-QWidget[theme="light"] QWidget#recentContainer:hover, QWidget QWidget#recentContainer:hover {
-    background-color: #f4e8dc;
+QWidget[theme="light"] QWidget#recentProjectItem:hover, QWidget QWidget#recentProjectItem:hover {
+    background-color: #ffffff;
+    border: 1px solid #B06345;
 }
 
 QWidget[theme="light"] QLabel#recentIcon, QWidget QLabel#recentIcon {
@@ -209,22 +220,26 @@ QWidget[theme="light"] QLabel#recentIcon, QWidget QLabel#recentIcon {
 
 QWidget[theme="light"] QLabel#recentName, QWidget QLabel#recentName {
     color: #3A2A20;
+    font-weight: 600;
 }
 
 QWidget[theme="light"] QLabel#recentTime, QWidget QLabel#recentTime {
     color: #7c5a45;
+    font-size: 12px;
 }
 
 QWidget[theme="light"] QLabel#recentArrow, QWidget QLabel#recentArrow {
     color: #C97B5A;
+    font-size: 16px;
 }
 
 QFrame#divider {
-    height: 1px;
+    height: 0px;
+    border: none;
 }
 
 QWidget[theme="light"] QFrame#divider, QWidget QFrame#divider {
-    background-color: #C97B5A;
+    background-color: transparent;
 }
 
 QPushButton#themeToggle {
@@ -301,12 +316,18 @@ QWidget[theme="dark"] QLabel#cardDesc {
 }
 
 QWidget[theme="dark"] QWidget#recentContainer {
+    background-color: transparent;
+    border: none;
+}
+
+QWidget[theme="dark"] QWidget#recentProjectItem {
     background-color: #1e293b;
     border: 1px solid #334155;
 }
 
-QWidget[theme="dark"] QWidget#recentContainer:hover {
+QWidget[theme="dark"] QWidget#recentProjectItem:hover {
     background-color: #2a3448;
+    border: 1px solid #3b82f6;
 }
 
 QWidget[theme="dark"] QLabel#recentIcon {
@@ -315,22 +336,25 @@ QWidget[theme="dark"] QLabel#recentIcon {
 
 QWidget[theme="dark"] QLabel#recentName {
     color: #e2e8f0;
+    font-weight: 600;
 }
 
 QWidget[theme="dark"] QLabel#recentTime {
     color: #94a3b8;
+    font-size: 12px;
 }
 
 QWidget[theme="dark"] QLabel#recentArrow {
     color: #64748b;
+    font-size: 16px;
 }
 
-QWidget[theme="dark"] RecentProjectItem:hover QLabel#recentName {
+QWidget[theme="dark"] QWidget#recentProjectItem:hover QLabel#recentName {
     color: #3b82f6;
 }
 
 QWidget[theme="dark"] QFrame#divider {
-    background-color: #334155;
+    background-color: transparent;
 }
 
 QWidget[theme="dark"] QPushButton#logoutButton {

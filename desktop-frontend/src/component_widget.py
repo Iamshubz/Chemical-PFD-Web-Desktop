@@ -13,20 +13,35 @@ class ComponentWidget(QWidget):
         self.config = config or {}
         self.renderer = QSvgRenderer(svg_path)
 
-        # Standard component size (closer to web default of 100x100)
-        self.setFixedSize(100, 60)
+        # Dynamic size based on SVG dimensions
+        default_size = self.renderer.defaultSize()
+        w = default_size.width()
+        h = default_size.height()
+
+        if w > 0 and h > 0:
+            scale = 100.0 / max(w, h)
+            new_w = max(20, int(w * scale))
+            new_h = max(20, int(h * scale))
+        else:
+            new_w, new_h = 100, 60
+
+        self.setFixedSize(new_w, new_h)
+
 
         self.hover_port = None
         self.is_selected = False
         self.drag_start_global = None
         
         self.rotation_angle = 0
-        self.rotation_angle = 0
         self.drag_start_positions = {}
+        
+        # Validation State
+        self.is_valid = True
+        self.validation_error_msg = ""
         
         # Logical Coordinates (True 100% scale geometry)
         # Initialize from current geometry or valid defaults
-        self.logical_rect = QRectF(self.x(), self.y(), 100, 60)
+        self.logical_rect = QRectF(self.x(), self.y(), new_w, new_h)
 
         # Cache for grips to prevent file reading lag during paint events
         self._cached_grips = None
@@ -106,8 +121,54 @@ class ComponentWidget(QWidget):
     
     # _should_invert_y_axis REMOVED — web always inverts Y, so we do too
     
-
-
+    def get_svg_dimensions(self):
+        """
+        Get the natural dimensions from the SVG viewBox.
+        Returns (width, height) as a tuple.
+        """
+        if self.renderer.isValid():
+            default_size = self.renderer.defaultSize()
+            return (default_size.width(), default_size.height())
+        return (100, 100)  # Fallback
+    
+    def calculate_logical_size(self, svg_size):
+        """
+        Calculate logical component size that maintains aspect ratio.
+        Uses a standard scale factor so components are reasonably sized.
+        
+        Scale to approximately 100px on the longer dimension to match web defaults.
+        """
+        width, height = svg_size
+        
+        if width == 0 or height == 0:
+            return (100, 60)  # Fallback
+        
+        # Target size for the longer dimension
+        target_size = 100.0
+        
+        # Calculate aspect ratio
+        aspect_ratio = float(width) / float(height)
+        
+        if width >= height:
+            # Width is longer
+            logical_width = target_size
+            logical_height = target_size / aspect_ratio
+        else:
+            # Height is longer
+            logical_height = target_size
+            logical_width = target_size * aspect_ratio
+        
+        # Ensure minimum size for usability, but maintain aspect ratio
+        min_dimension = 20.0  # Absolute minimum for visibility
+        
+        if logical_width < min_dimension or logical_height < min_dimension:
+            # Scale up proportionally to meet minimum
+            scale_factor = max(min_dimension / logical_width, min_dimension / logical_height)
+            logical_width *= scale_factor
+            logical_height *= scale_factor
+        
+        # Round to nearest integer while preserving aspect ratio as much as possible
+        return (round(logical_width), round(logical_height))
 
     def load_grips_from_json(self):
         """
@@ -195,6 +256,13 @@ class ComponentWidget(QWidget):
         return grips
 
     def paintEvent(self, event):
+        # Update tooltip based on validity
+        if not self.is_valid and self.validation_error_msg:
+            self.setToolTip(self.validation_error_msg)
+        else:
+            # We don't want to hide default tooltips if they existed, but currently they are mostly empty
+            self.setToolTip(self.config.get("name", ""))
+            
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
@@ -214,6 +282,25 @@ class ComponentWidget(QWidget):
             painter.setPen(QPen(QColor("#60a5fa"), 2.5))
             painter.setBrush(Qt.NoBrush)
             painter.drawRoundedRect(svg_rect.adjusted(1, 1, -1, -1), 6, 6)
+            
+        # Validation Error Icon (Badge)
+        if not self.is_valid:
+            error_color = QColor("#f87171") if app_state.current_theme == "dark" else QColor("#ef4444")
+            painter.setBrush(error_color)
+            painter.setPen(Qt.NoPen)
+            
+            # Position at top-right corner of the SVG rect
+            radius = 5.5
+            center_x = svg_rect.right() - radius
+            center_y = svg_rect.top() + radius
+            
+            painter.drawEllipse(QPointF(center_x, center_y), radius, radius)
+            
+            # Draw an exclamation mark inside the circle
+            painter.setPen(QPen(Qt.white, 1.5, Qt.SolidLine, Qt.RoundCap))
+            painter.drawLine(QPointF(center_x, center_y - 2), QPointF(center_x, center_y + 1))
+            painter.drawPoint(QPointF(center_x, center_y + 3))
+
 
         # Label (drawn below SVG, within the extra LABEL_H space added by update_visuals)
         if self.config.get('default_label'):
