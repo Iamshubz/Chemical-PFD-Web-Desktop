@@ -120,7 +120,7 @@ class Connection:
         if should_use_auto_router and components:
             self._calculate_path_with_auto_router(components, other_connections)
         else:
-            self._calculate_path_rule_based()
+            self._calculate_path_rule_based(components)
     
     def _calculate_path_with_auto_router(self, components, other_connections=None):
         """
@@ -167,7 +167,7 @@ class Connection:
         # CRITICAL: Ensure perfect orthogonality even for auto-routed paths
         self.path = self._ensure_orthogonal_path(raw_path)
     
-    def _calculate_path_rule_based(self):
+    def _calculate_path_rule_based(self, obstacles=None):
         """
         Original rule-based orthogonal routing logic.
         Determines the path points based on start/end positions and grip directions.
@@ -369,10 +369,9 @@ class Connection:
                  points.append(pe)
 
         points.append(end_point)
-        
-        # CRITICAL: Ensure perfect orthogonality by aligning all intermediate points
-        # This prevents diagonal segments that can occur due to floating point calculations
-        self.path = self._ensure_orthogonal_path(points)
+        points = self._avoid_components(points, obstacles)
+        points = self._ensure_orthogonal_path(points)
+        self.path = self._simplify_path(points)
 
     def _ensure_orthogonal_path(self, points: list) -> list:
         """
@@ -598,6 +597,120 @@ class Connection:
         """Enable or disable smart auto-routing for this connection."""
         self.use_auto_router = enable
 
+    def _avoid_components(self, points, obstacles):
+        if not obstacles or len(points) < 2:
+            return points
+
+        blocked_components = []
+        for comp in obstacles:
+            if comp in (self.start_component, self.end_component, self.snap_component):
+                continue
+            if hasattr(comp, "logical_rect"):
+                blocked_components.append(comp)
+
+        if not blocked_components:
+            return points
+
+        routed = list(points)
+        for _ in range(2):
+            changed = False
+            result = [routed[0]]
+            for i in range(len(routed) - 1):
+                p1 = result[-1]
+                p2 = routed[i + 1]
+
+                detoured = False
+                for comp in blocked_components:
+                    rect = comp.logical_rect.adjusted(-10, -10, 10, 10)
+                    detour_path = self._detour_segment_around_rect(p1, p2, rect)
+                    if detour_path:
+                        for pt in detour_path[1:]:
+                            result.append(pt)
+                        detoured = True
+                        changed = True
+                        break
+
+                if not detoured:
+                    result.append(p2)
+
+            routed = result
+            if not changed:
+                break
+
+        return routed
+
+    def _detour_segment_around_rect(self, p1, p2, rect):
+        is_horizontal = abs(p1.y() - p2.y()) < 0.5
+        is_vertical = abs(p1.x() - p2.x()) < 0.5
+
+        if is_horizontal:
+            y = p1.y()
+            min_x = min(p1.x(), p2.x())
+            max_x = max(p1.x(), p2.x())
+            intersects = (rect.top() <= y <= rect.bottom()) and (max_x > rect.left()) and (min_x < rect.right())
+            if not intersects:
+                return None
+
+            top_y = rect.top()
+            bottom_y = rect.bottom()
+            bypass_y = top_y if abs(y - top_y) <= abs(y - bottom_y) else bottom_y
+            return [
+                p1,
+                QPointF(p1.x(), bypass_y),
+                QPointF(p2.x(), bypass_y),
+                p2,
+            ]
+
+        if is_vertical:
+            x = p1.x()
+            min_y = min(p1.y(), p2.y())
+            max_y = max(p1.y(), p2.y())
+            intersects = (rect.left() <= x <= rect.right()) and (max_y > rect.top()) and (min_y < rect.bottom())
+            if not intersects:
+                return None
+
+            left_x = rect.left()
+            right_x = rect.right()
+            bypass_x = left_x if abs(x - left_x) <= abs(x - right_x) else right_x
+            return [
+                p1,
+                QPointF(bypass_x, p1.y()),
+                QPointF(bypass_x, p2.y()),
+                p2,
+            ]
+
+        return None
+
+    def _simplify_path(self, points):
+        if len(points) < 3:
+            return points
+
+        deduped = [points[0]]
+        for pt in points[1:]:
+            prev = deduped[-1]
+            if abs(prev.x() - pt.x()) < 0.01 and abs(prev.y() - pt.y()) < 0.01:
+                continue
+            deduped.append(pt)
+
+        if len(deduped) < 3:
+            return deduped
+
+        simplified = [deduped[0]]
+        for i in range(1, len(deduped) - 1):
+            a = simplified[-1]
+            b = deduped[i]
+            c = deduped[i + 1]
+
+            collinear_vertical = abs(a.x() - b.x()) < 0.01 and abs(b.x() - c.x()) < 0.01
+            collinear_horizontal = abs(a.y() - b.y()) < 0.01 and abs(b.y() - c.y()) < 0.01
+            if collinear_vertical or collinear_horizontal:
+                continue
+
+            simplified.append(b)
+
+        simplified.append(deduped[-1])
+        return simplified
+
     def update_path(self, components, other_connections):
         """
         High-level update:
@@ -696,56 +809,14 @@ class Connection:
                     dest = p1 + u * segment_end_dist
                     self.painter_path.lineTo(dest)
                 
-                # Draw Jump (Arc)
-                # We want a semi-circle. 
-                # QPainterPath.arcTo(rect, startAngle, sweepLength)
-                # Rect is bounding box of the circle.
-                # Center of jump is p1 + u * dist
                 jump_center = p1 + u * dist
-                
-                # Determine rect
-                # This arc should bulge "up" relative to the line direction?
-                # Standard PFD jump convention: usually bumps 'up' (screen Y negative) for horizontal
-                # For vertical, bumps left or right?
-                # Let's say we bump "Positive Normal"
-                # Normal (-y, x)
+
                 
                 rect_top_left = jump_center - QPointF(r, r)
                 rect = QRectF(rect_top_left, QSizeF(2*r, 2*r))
                 
                 # Calculate angle of the line
                 angle = math.degrees(math.atan2(u.y(), u.x()))
-                # arcTo takes start angle (3 o'clock is 0)
-                # We want to start at angle - 180 (backwards) ? No.
-                # If moving Right (0 deg), we start at 180 (left side of circle) and sweep -180 (up/ccw?)
-                
-                # Actually, simpler: 
-                # p_start = center - u*r
-                # p_end = center + u*r
-                
-                # If we use arcTo, we need the rect.
-                # if Line is Horizontal Right (0 deg)
-                # we draw line to left-of-center.
-                # We want arc to go UP. 
-                # StartAngle 180, Sweep -180 (Clockwise check?)
-                # Qt: Positive sweep is Counter-Clockwise.
-                # if we want Bump UP, we need start 180, sweep 180? (Goes down?)
-                # 0 is East. 90 is North (Screen Y is down, so 90 is Down visually in normal math, but Qt Y is down)
-                # Wait, Qt Y is down.
-                # 0 = Right (X+)
-                # 90 = Down (Y+)
-                # 270 = Up (Y-)
-                
-                # If Horizontal Right: Start 180 (Left), sweep +180 -> goes through 270 (Up). Correct.
-                # If Horizontal Left: Angle 180.
-                # We approach from Right side of circle (0 deg).
-                # Start 0. Sweep -180 -> goes through -90 (Up, which is 270). Correct. (Or +180 goes through 90 Down)
-                
-                # General Formula:
-                # we enter at -u (relative to center).
-                # angle of -u is angle + 180.
-                # we want to bulge 'Left' relative to direction? Or just always Up/Left?
-                # Let's simple fix: always counter-clockwise (+180)
                 
                 self.painter_path.arcTo(rect, -angle + 180, -180) 
                 # Note: Qt angles are counter-clockwise, but Y is flipped.
@@ -797,18 +868,9 @@ class Connection:
                 # Normalize
                 u = vec / l
                 
-                # OFFSET THE ARROW TIP
-                # Visual padding of component plate is ~6px.
-                # 10px visual gap ensures we clear the component plate in Dark Mode.
-                # In Light Mode, we only need to clear the grip radius (~4px), or users might prefer it tighter.
-                
-                visual_retract = 10.0 if theme == "dark" else 4.0
-                retract_px = visual_retract / max(0.1, zoom)
-                
-                if l < retract_px: 
-                    retract_px = 0
-                
-                p_tip = p_end - u * retract_px
+                # Arrow tip connects directly to the grip point (no retraction)
+                # This ensures the connection line touches the grip exactly
+                p_tip = p_end
                 
                 # Arrow Geometry
                 # Maintain constant VISUAL size for the arrow
@@ -824,14 +886,6 @@ class Connection:
                 p2 = p_base - perp * (arrow_size / 2.5)
                 
                 arrow_poly = QPolygonF([p_tip, p1, p2])
-                
-                # Draw Eraser Line to hide the "nose"
-                eraser_color = QColor("#0f172a") if theme == "dark" else Qt.white
-                
-                # Eraser must be slightly thicker than the line to fully cover it
-                eraser_width = (visual_width + 1.0) / max(0.1, zoom)
-                painter.setPen(QPen(eraser_color, eraser_width))
-                painter.drawLine(p_tip, p_end)
                 
                 # Draw Arrow with High Contrast Black Border
                 # Solid Black border ensures visibility on top of EVERYTHING.

@@ -7,7 +7,28 @@ from src.canvas.export import ( load_from_pfd,
     export_to_image, export_to_pdf, generate_report_pdf,
     export_to_excel, save_canvas_state
 )
+from src.canvas.validation import GraphValidator
 from src.api_client import delete_project
+from src.toast import show_toast
+
+
+def _build_validation_message(canvas):
+    validator = GraphValidator(canvas.components, canvas.connections)
+    errors = validator.validate()
+
+    parts = []
+    if errors.get("missing_inlet"):
+        parts.append("⚠ Missing inlet")
+    if errors.get("missing_outlet"):
+        parts.append("⚠ Missing outlet")
+    if errors.get("isolated"):
+        parts.append(f"⚠ {len(errors['isolated'])} isolated")
+    if errors.get("loops"):
+        parts.append(f"⚠ {len(errors['loops'])} loop")
+    if errors.get("flow_errors"):
+        parts.append(f"⚠ {len(errors['flow_errors'])} flow error")
+
+    return " | ".join(parts)
 
 # ---------------------- UNDO COMMANDS ----------------------
 
@@ -52,6 +73,10 @@ class AddConnectionCommand(QUndoCommand):
                 self.connection.update_path(self.canvas.components, self.canvas.connections)
             
             self.canvas.update()
+
+            message = _build_validation_message(self.canvas)
+            if message:
+                show_toast(message, duration=3000)
 
     def undo(self):
         if self.connection in self.canvas.connections:

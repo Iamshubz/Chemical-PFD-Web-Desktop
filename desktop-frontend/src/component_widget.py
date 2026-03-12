@@ -357,24 +357,29 @@ class ComponentWidget(QWidget):
     def get_logical_grip_position(self, idx):
         """
         Get grip position in LOGICAL coordinates (unscaled).
-        
-        Matches web formula exactly:
-          cx = (grip.x / 100) * width
-          cy = ((100 - grip.y) / 100) * height
-        
-        No margins, no offsets — direct percentage of logical size.
+
+        Must match the same SVG render rect logic used by paintEvent,
+        otherwise connection endpoints and visible cyan grips diverge.
         """
         grips = self.get_grips()
 
         if 0 <= idx < len(grips):
             grip = grips[idx]
-            l_w = self.logical_rect.width()
-            l_h = self.logical_rect.height()
-            
-            cx = (grip["x"] / 100.0) * l_w
-            cy = ((100.0 - grip["y"]) / 100.0) * l_h
-            
-            return QPointF(cx, cy)
+
+            # Recreate the same geometry used for visual rendering, but in logical space.
+            logical_pad = float(self.PORT_PAD)
+            logical_content = QRectF(
+                logical_pad,
+                logical_pad,
+                max(1.0, self.logical_rect.width()),
+                max(1.0, self.logical_rect.height()),
+            )
+
+            logical_svg_rect = self.calculate_svg_rect(logical_content)
+            mapped = self.map_svg_to_widget_coords(grip["x"], grip["y"], logical_svg_rect)
+
+            # Convert from widget-relative (includes pad) to logical-rect-relative.
+            return QPointF(mapped.x() - logical_pad, mapped.y() - logical_pad)
 
         return QPointF(0, 0)
 
