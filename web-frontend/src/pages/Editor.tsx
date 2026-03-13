@@ -944,7 +944,7 @@ export default function Editor() {
 
   // --- Helpers ---
   const connectionPaths = useMemo(
-    () => calculateManualPathsWithBridges(connections, droppedItems),
+    () => calculateManualPathsWithBridges(connections, droppedItems, 2000, 1500, true),
     [connections, droppedItems],
   );
 
@@ -1576,6 +1576,9 @@ export default function Editor() {
     const map = calculateManualPathsWithBridges(
       [previewConn as any],
       [...droppedItems, fakeTarget as any],
+      2000,
+      1500,
+      true
     );
 
     const meta = map[-1];

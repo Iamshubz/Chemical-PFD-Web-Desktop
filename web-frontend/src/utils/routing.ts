@@ -1,4 +1,5 @@
 import { CanvasItem, Connection } from "@/components/Canvas/types";
+import { smartOrthogonalRoute, RouterConfig } from "./pathfinding";
 
 // --- Constants ---
 const BRIDGE_SIZE = 12; // Radius/Width of the jump
@@ -135,6 +136,35 @@ export const smartRoute = (
   return candidates[0];
 };
 
+/**
+ * Enhanced smart routing using A* pathfinding
+ * Provides better obstacle avoidance and more natural-looking paths
+ */
+export const smartRouteAStar = (
+  start: Point,
+  end: Point,
+  items: CanvasItem[],
+  canvasWidth: number = 2000,
+  canvasHeight: number = 1500,
+  startGrip?: any,
+  endGrip?: any,
+  waypoints?: Point[]
+): Point[] => {
+  const config: RouterConfig = {
+    canvasWidth,
+    canvasHeight,
+    standoffDistance: STANDOFF_DIST,
+  };
+
+  try {
+    return smartOrthogonalRoute(start, end, items, config, startGrip, endGrip, waypoints);
+  } catch (error) {
+    console.warn('A* routing failed, falling back to simple routing:', error);
+    // Fallback to original routing
+    return smartRoute(start, end, items);
+  }
+};
+
 // Start point, End point, ID of the line, and full object for reference
 interface LineSegment {
   p1: Point;
@@ -235,6 +265,9 @@ export const getStandoff = (p: Point, grip: any) => {
 export const calculateManualPathsWithBridges = (
   connections: Connection[],
   items: CanvasItem[],
+  canvasWidth: number = 2000,
+  canvasHeight: number = 1500,
+  useAStar: boolean = true
 ): Record<number, PathMetadata> => {
   // 1. Build geometry for all lines
   const rawLines: { id: number; segments: LineSegment[] }[] = [];
@@ -265,12 +298,22 @@ export const calculateManualPathsWithBridges = (
     if (conn.waypoints && conn.waypoints.length > 0) {
       const waypoint = conn.waypoints[0];
 
-      const first = smartRoute(startStandoff, waypoint, items);
-      const second = smartRoute(waypoint, endStandoff, items);
-
-      bends = [...first, waypoint, ...second];
+      if (useAStar) {
+        const first = smartRouteAStar(startStandoff, waypoint, items, canvasWidth, canvasHeight, sourceGrip, null);
+        const second = smartRouteAStar(waypoint, endStandoff, items, canvasWidth, canvasHeight, null, targetGrip);
+        bends = [...first.slice(1, -1), waypoint, ...second.slice(1, -1)]; // Remove duplicate start/end points
+      } else {
+        const first = smartRoute(startStandoff, waypoint, items);
+        const second = smartRoute(waypoint, endStandoff, items);
+        bends = [...first, waypoint, ...second];
+      }
     } else {
-      bends = smartRoute(startStandoff, endStandoff, items);
+      if (useAStar) {
+        bends = smartRouteAStar(startStandoff, endStandoff, items, canvasWidth, canvasHeight, sourceGrip, targetGrip);
+        bends = bends.slice(1, -1); // Remove standoff points from result since we add them separately
+      } else {
+        bends = smartRoute(startStandoff, endStandoff, items);
+      }
     }
 
     connectionWaypoints[conn.id] = bends;
