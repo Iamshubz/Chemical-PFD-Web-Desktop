@@ -8,11 +8,11 @@ import {
 } from "react-konva";
 import useImage from "use-image";
 import Konva from "konva";
+import { Rect } from "react-konva";
 
-import { CanvasItemImageProps } from "./types";
 import { calculateAspectFit } from "../../utils/layout";
 
-import { Rect } from "react-konva";
+import { CanvasItemImageProps } from "./types";
 
 const LABEL_OFFSET = 4;
 
@@ -118,20 +118,21 @@ export const CanvasItemImage = ({
         draggable
         height={item.height}
         rotation={item.rotation}
+        scaleX={1}
+        scaleY={1}
         width={item.width}
         x={item.x}
         y={item.y}
-        scaleX={1}
-        scaleY={1}
         onDragEnd={handleDragEnd}
-        onTransformEnd={handleTransformEnd}>
+        onTransformEnd={handleTransformEnd}
+      >
         {isInvalid && (
           <Rect
-            width={item.width}
+            dash={[6, 4]}
             height={item.height}
             stroke="red"
             strokeWidth={2}
-            dash={[6, 4]}
+            width={item.width}
           />
         )}
         <KonvaImage
@@ -153,33 +154,34 @@ export const CanvasItemImage = ({
         fontFamily="Arial, sans-serif"
         fontSize={12}
         listening={false}
+        offsetX={(item.width + 100) / 2} // Center align
         text={labelText}
         width={item.width + 100} // Increase width to prevent wrapping
         x={labelX + item.width / 2}
         y={labelY + 2}
-        offsetX={(item.width + 100) / 2} // Center align
       />
 
       {/* ================= TRANSFORMER ================= */}
       {isSelected && (
         <Transformer
           ref={trRef}
-          rotateEnabled={false} // Disable rotation
-          keepRatio={true} // Enforce aspect ratio scaling
-          flipEnabled={false} // Disable flipping to prevent negative scale issues
+          boundBoxFunc={(oldBox, newBox) => {
+            // Prevent shrinking too small
+            if (newBox.width < 10 || newBox.height < 10) {
+              return oldBox;
+            }
+
+            return newBox;
+          }}
           enabledAnchors={[
             "top-left",
             "top-right",
             "bottom-left",
             "bottom-right",
           ]}
-          boundBoxFunc={(oldBox, newBox) => {
-            // Prevent shrinking too small
-            if (newBox.width < 10 || newBox.height < 10) {
-              return oldBox;
-            }
-            return newBox;
-          }}
+          flipEnabled={false} // Disable flipping to prevent negative scale issues
+          keepRatio={true} // Enforce aspect ratio scaling
+          rotateEnabled={false} // Disable rotation
         />
       )}
 

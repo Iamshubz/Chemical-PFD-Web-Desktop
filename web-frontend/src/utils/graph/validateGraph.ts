@@ -53,6 +53,7 @@ export function validateGraph(graph: Graph): ValidationResult {
   function dfs(node: string) {
     if (recursionStack.has(node)) {
       circular.add(node);
+
       return;
     }
 
@@ -80,6 +81,7 @@ export function validateGraph(graph: Graph): ValidationResult {
 
   while (queue.length > 0) {
     const current = queue.shift()!;
+
     reachable.add(current);
 
     for (const neighbor of adjacencyList[current]) {

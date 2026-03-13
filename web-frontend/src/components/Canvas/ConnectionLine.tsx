@@ -3,10 +3,9 @@
 import { Path, RegularPolygon, Circle } from "react-konva";
 import { KonvaEventObject } from "konva/lib/Node";
 
-import { Connection, CanvasItem } from "./types";
+import { CanvasItem } from "./types";
 
 interface ConnectionLineProps {
-  connection: Connection;
   points: { x: number; y: number }[];
   items?: CanvasItem[];
   isSelected?: boolean;
@@ -17,7 +16,6 @@ interface ConnectionLineProps {
 }
 
 export const ConnectionLine = ({
-  connection,
   points,
   pathData,
   isSelected = false,
@@ -93,13 +91,13 @@ export const ConnectionLine = ({
         points.map((p, i) => (
           <Circle
             key={i}
-            x={p.x}
-            y={p.y}
-            radius={6}
+            draggable
             fill="#00e5ff"
+            radius={6}
             stroke="#000"
             strokeWidth={1}
-            draggable
+            x={p.x}
+            y={p.y}
             onDragMove={(e) => {
               const dx = Math.abs(e.target.x() - p.x);
               const dy = Math.abs(e.target.y() - p.y);
@@ -122,10 +120,12 @@ export const ConnectionLine = ({
             }}
             onMouseEnter={(e) => {
               const stage = e.target.getStage();
+
               if (stage) stage.container().style.cursor = "move";
             }}
             onMouseLeave={(e) => {
               const stage = e.target.getStage();
+
               if (stage) stage.container().style.cursor = "default";
             }}
           />

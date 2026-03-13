@@ -53,11 +53,14 @@ function convertToComponentItem(data: ComponentData): ComponentItem {
 }
 
 // Convert ComponentData array to categorized component structure
-function categorizeComponents(components: ComponentData[]): Record<string, Record<string, ComponentItem>> {
+function categorizeComponents(
+  components: ComponentData[],
+): Record<string, Record<string, ComponentItem>> {
   const categorized: Record<string, Record<string, ComponentItem>> = {};
 
   components.forEach((comp) => {
     const category = comp.parent || "Uncategorized";
+
     if (!categorized[category]) {
       categorized[category] = {};
     }
@@ -69,20 +72,23 @@ function categorizeComponents(components: ComponentData[]): Record<string, Recor
 
 // Convert base64 data URL to File object
 function dataURLtoFile(dataurl: string, filename: string): File {
-  const arr = dataurl.split(',');
-  const mime = arr[0].match(/:(.*?);/)?.[1] || 'application/octet-stream';
+  const arr = dataurl.split(",");
+  const mime = arr[0].match(/:(.*?);/)?.[1] || "application/octet-stream";
   const bstr = atob(arr[1]);
   let n = bstr.length;
   const u8arr = new Uint8Array(n);
+
   while (n--) {
     u8arr[n] = bstr.charCodeAt(n);
   }
+
   return new File([u8arr], filename, { type: mime });
 }
 
 export const ComponentProvider = ({ children }: { children: ReactNode }) => {
-  const [components, setComponents] =
-    useState<Record<string, Record<string, ComponentItem>>>({});
+  const [components, setComponents] = useState<
+    Record<string, Record<string, ComponentItem>>
+  >({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,12 +99,17 @@ export const ComponentProvider = ({ children }: { children: ReactNode }) => {
       setError(null);
       const data = await fetchComponents();
       const categorized = categorizeComponents(data);
+
       setComponents(categorized);
     } catch (err: any) {
       console.error("Failed to fetch components:", err);
       // Only set error for actual failures, not for empty lists
       if (err.response?.status !== 404) {
-        setError(err.response?.data?.detail || err.message || "Failed to load components");
+        setError(
+          err.response?.data?.detail ||
+            err.message ||
+            "Failed to load components",
+        );
       }
       // Set empty components on error
       setComponents({});
@@ -119,10 +130,18 @@ export const ComponentProvider = ({ children }: { children: ReactNode }) => {
       let svgFile: File | undefined;
       let pngFile: File | undefined;
 
-      if (component.svg && typeof component.svg === 'string' && component.svg.startsWith('data:')) {
+      if (
+        component.svg &&
+        typeof component.svg === "string" &&
+        component.svg.startsWith("data:")
+      ) {
         svgFile = dataURLtoFile(component.svg, `${component.name}.svg`);
       }
-      if (component.icon && typeof component.icon === 'string' && component.icon.startsWith('data:')) {
+      if (
+        component.icon &&
+        typeof component.icon === "string" &&
+        component.icon.startsWith("data:")
+      ) {
         pngFile = dataURLtoFile(component.icon, `${component.name}.png`);
       }
 
@@ -140,10 +159,12 @@ export const ComponentProvider = ({ children }: { children: ReactNode }) => {
       // Update local state
       setComponents((prev) => {
         const updated = { ...prev };
+
         if (!updated[category]) {
           updated[category] = {};
         }
         updated[category][created.name] = convertToComponentItem(created);
+
         return updated;
       });
     } catch (err: any) {
@@ -159,6 +180,7 @@ export const ComponentProvider = ({ children }: { children: ReactNode }) => {
 
       // Find component ID
       const comp = components[category]?.[name];
+
       if (!comp || !comp.id) {
         throw new Error("Component not found");
       }
@@ -168,8 +190,10 @@ export const ComponentProvider = ({ children }: { children: ReactNode }) => {
       // Update local state
       setComponents((prev) => {
         const updated = { ...prev };
+
         if (updated[category]) {
           const { [name]: deleted, ...rest } = updated[category];
+
           updated[category] = rest;
 
           // Remove category if empty
@@ -177,6 +201,7 @@ export const ComponentProvider = ({ children }: { children: ReactNode }) => {
             delete updated[category];
           }
         }
+
         return updated;
       });
     } catch (err: any) {
@@ -197,6 +222,7 @@ export const ComponentProvider = ({ children }: { children: ReactNode }) => {
 
       // Find component ID
       const comp = components[oldCategory]?.[oldName];
+
       if (!comp || !comp.id) {
         throw new Error("Component not found");
       }
@@ -205,10 +231,18 @@ export const ComponentProvider = ({ children }: { children: ReactNode }) => {
       let svgFile: File | undefined;
       let pngFile: File | undefined;
 
-      if (newComponent.svg && typeof newComponent.svg === 'string' && newComponent.svg.startsWith('data:')) {
+      if (
+        newComponent.svg &&
+        typeof newComponent.svg === "string" &&
+        newComponent.svg.startsWith("data:")
+      ) {
         svgFile = dataURLtoFile(newComponent.svg, `${newComponent.name}.svg`);
       }
-      if (newComponent.icon && typeof newComponent.icon === 'string' && newComponent.icon.startsWith('data:')) {
+      if (
+        newComponent.icon &&
+        typeof newComponent.icon === "string" &&
+        newComponent.icon.startsWith("data:")
+      ) {
         pngFile = dataURLtoFile(newComponent.icon, `${newComponent.name}.png`);
       }
 
@@ -230,6 +264,7 @@ export const ComponentProvider = ({ children }: { children: ReactNode }) => {
         // Remove from old category
         if (next[oldCategory]) {
           const { [oldName]: deleted, ...rest } = next[oldCategory];
+
           next[oldCategory] = rest;
 
           // Remove old category if empty

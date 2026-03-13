@@ -18,6 +18,7 @@ export function buildGraph(
   // Initialize all nodes
   nodes.forEach((node) => {
     const id = String(node.id);
+
     adjacencyList[id] = [];
     inDegree[id] = 0;
     outDegree[id] = 0;

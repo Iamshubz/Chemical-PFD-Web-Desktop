@@ -49,9 +49,7 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<ApiProject[]>(() => []);
 
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
-  const [editingProject, setEditingProject] = useState<ApiProject | null>(
-    null,
-  );
+  const [editingProject, setEditingProject] = useState<ApiProject | null>(null);
   const [deletingProject, setDeletingProject] = useState<ApiProject | null>(
     null,
   );
@@ -201,7 +199,6 @@ export default function Dashboard() {
       });
   }, []);
 
-
   const handleCreateNewProject = async (name: string, description: string) => {
     const project = await createProject(name, description || null);
 
@@ -342,7 +339,9 @@ export default function Dashboard() {
         <div className="text-center py-16">
           <div className="text-6xl mb-4">📄</div>
           <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
-            {projects.length === 0 ? "No projects yet" : "No projects for search result"}
+            {projects.length === 0
+              ? "No projects yet"
+              : "No projects for search result"}
           </h2>
           <p className="text-gray-500 mb-6">
             {projects.length === 0

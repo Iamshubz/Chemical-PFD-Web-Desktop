@@ -1,8 +1,8 @@
-import { CanvasItem, Connection } from './types';
+import { CanvasItem, Connection } from "./types";
 
 /**
  * Diagram File Format (Version 1.0)
- * 
+ *
  * This format includes:
  * - Canvas items with their positions and properties
  * - Connections between items
@@ -41,7 +41,7 @@ export interface DiagramFileFormat {
 /**
  * Current version of the file format
  */
-export const CURRENT_VERSION = '1.0.0';
+export const CURRENT_VERSION = "1.0.0";
 
 /**
  * Create a new diagram file
@@ -57,14 +57,14 @@ export function createDiagramFile(
     gridSize?: number;
     author?: string;
     tags?: string[];
-  } = {}
+  } = {},
 ): DiagramFileFormat {
   const now = new Date().toISOString();
-  
+
   return {
     version: CURRENT_VERSION,
     metadata: {
-      name: options.name || 'Untitled Diagram',
+      name: options.name || "Untitled Diagram",
       description: options.description,
       createdAt: now,
       updatedAt: now,
@@ -74,11 +74,11 @@ export function createDiagramFile(
     canvas: {
       width: 1200, // Default canvas size
       height: 800,
-      backgroundColor: options.backgroundColor || '#ffffff',
+      backgroundColor: options.backgroundColor || "#ffffff",
       grid: {
         enabled: options.gridEnabled !== undefined ? options.gridEnabled : true,
         size: options.gridSize || 20,
-        color: '#e5e7eb',
+        color: "#e5e7eb",
       },
       viewport: {
         scale: 1,
@@ -94,14 +94,14 @@ export function createDiagramFile(
  * Validate a diagram file
  */
 export function validateDiagramFile(data: any): data is DiagramFileFormat {
-  if (!data || typeof data !== 'object') return false;
-  if (typeof data.version !== 'string') return false;
-  if (!data.metadata || typeof data.metadata !== 'object') return false;
-  if (typeof data.metadata.name !== 'string') return false;
-  if (!data.canvas || typeof data.canvas !== 'object') return false;
+  if (!data || typeof data !== "object") return false;
+  if (typeof data.version !== "string") return false;
+  if (!data.metadata || typeof data.metadata !== "object") return false;
+  if (typeof data.metadata.name !== "string") return false;
+  if (!data.canvas || typeof data.canvas !== "object") return false;
   if (!Array.isArray(data.items)) return false;
   if (!Array.isArray(data.connections)) return false;
-  
+
   return true;
 }
 
@@ -114,7 +114,7 @@ export function migrateDiagramFile(data: any): DiagramFileFormat {
     return {
       version: CURRENT_VERSION,
       metadata: {
-        name: data.name || 'Untitled Diagram',
+        name: data.name || "Untitled Diagram",
         description: data.description,
         createdAt: data.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -124,11 +124,14 @@ export function migrateDiagramFile(data: any): DiagramFileFormat {
       canvas: {
         width: data.canvas?.width || 1200,
         height: data.canvas?.height || 800,
-        backgroundColor: data.canvas?.backgroundColor || '#ffffff',
+        backgroundColor: data.canvas?.backgroundColor || "#ffffff",
         grid: {
-          enabled: data.canvas?.grid?.enabled !== undefined ? data.canvas.grid.enabled : true,
+          enabled:
+            data.canvas?.grid?.enabled !== undefined
+              ? data.canvas.grid.enabled
+              : true,
           size: data.canvas?.grid?.size || 20,
-          color: data.canvas?.grid?.color || '#e5e7eb',
+          color: data.canvas?.grid?.color || "#e5e7eb",
         },
         viewport: {
           scale: data.canvas?.viewport?.scale || 1,
@@ -139,7 +142,7 @@ export function migrateDiagramFile(data: any): DiagramFileFormat {
       connections: data.connections || [],
     };
   }
-  
+
   // Add future migration logic here as version increases
   return data as DiagramFileFormat;
 }

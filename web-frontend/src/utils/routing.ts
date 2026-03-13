@@ -1,4 +1,5 @@
 import { CanvasItem, Connection } from "@/components/Canvas/types";
+
 import { smartOrthogonalRoute, RouterConfig } from "./pathfinding";
 
 // --- Constants ---
@@ -101,6 +102,7 @@ export const smartRoute = (
 
   // dogleg mid X
   const midX = (start.x + end.x) / 2;
+
   candidates.push([
     { x: midX, y: start.y },
     { x: midX, y: end.y },
@@ -108,6 +110,7 @@ export const smartRoute = (
 
   // dogleg mid Y
   const midY = (start.y + end.y) / 2;
+
   candidates.push([
     { x: start.x, y: midY },
     { x: end.x, y: midY },
@@ -148,7 +151,7 @@ export const smartRouteAStar = (
   canvasHeight: number = 1500,
   startGrip?: any,
   endGrip?: any,
-  waypoints?: Point[]
+  waypoints?: Point[],
 ): Point[] => {
   const config: RouterConfig = {
     canvasWidth,
@@ -157,9 +160,18 @@ export const smartRouteAStar = (
   };
 
   try {
-    return smartOrthogonalRoute(start, end, items, config, startGrip, endGrip, waypoints);
+    return smartOrthogonalRoute(
+      start,
+      end,
+      items,
+      config,
+      startGrip,
+      endGrip,
+      waypoints,
+    );
   } catch (error) {
-    console.warn('A* routing failed, falling back to simple routing:', error);
+    console.warn("A* routing failed, falling back to simple routing:", error);
+
     // Fallback to original routing
     return smartRoute(start, end, items);
   }
@@ -248,17 +260,20 @@ export const getClosestSide = (g: any): "top" | "bottom" | "left" | "right" => {
   if (min === distLeft) return "left";
   if (min === distRight) return "right";
   if (min === distTop) return "top";
+
   return "bottom";
 };
 
 export const getStandoff = (p: Point, grip: any) => {
   const side = getClosestSide(grip);
+
   if (!side) return p;
 
   if (side === "left") return { x: p.x - STANDOFF_DIST, y: p.y };
   if (side === "right") return { x: p.x + STANDOFF_DIST, y: p.y };
   if (side === "top") return { x: p.x, y: p.y - STANDOFF_DIST }; // Top is UP (negative Y in canvas)
   if (side === "bottom") return { x: p.x, y: p.y + STANDOFF_DIST }; // Bottom is DOWN (positive Y in canvas)
+
   return p;
 };
 
@@ -267,7 +282,7 @@ export const calculateManualPathsWithBridges = (
   items: CanvasItem[],
   canvasWidth: number = 2000,
   canvasHeight: number = 1500,
-  useAStar: boolean = true
+  useAStar: boolean = true,
 ): Record<number, PathMetadata> => {
   // 1. Build geometry for all lines
   const rawLines: { id: number; segments: LineSegment[] }[] = [];
@@ -299,17 +314,43 @@ export const calculateManualPathsWithBridges = (
       const waypoint = conn.waypoints[0];
 
       if (useAStar) {
-        const first = smartRouteAStar(startStandoff, waypoint, items, canvasWidth, canvasHeight, sourceGrip, null);
-        const second = smartRouteAStar(waypoint, endStandoff, items, canvasWidth, canvasHeight, null, targetGrip);
+        const first = smartRouteAStar(
+          startStandoff,
+          waypoint,
+          items,
+          canvasWidth,
+          canvasHeight,
+          sourceGrip,
+          null,
+        );
+        const second = smartRouteAStar(
+          waypoint,
+          endStandoff,
+          items,
+          canvasWidth,
+          canvasHeight,
+          null,
+          targetGrip,
+        );
+
         bends = [...first.slice(1, -1), waypoint, ...second.slice(1, -1)]; // Remove duplicate start/end points
       } else {
         const first = smartRoute(startStandoff, waypoint, items);
         const second = smartRoute(waypoint, endStandoff, items);
+
         bends = [...first, waypoint, ...second];
       }
     } else {
       if (useAStar) {
-        bends = smartRouteAStar(startStandoff, endStandoff, items, canvasWidth, canvasHeight, sourceGrip, targetGrip);
+        bends = smartRouteAStar(
+          startStandoff,
+          endStandoff,
+          items,
+          canvasWidth,
+          canvasHeight,
+          sourceGrip,
+          targetGrip,
+        );
         bends = bends.slice(1, -1); // Remove standoff points from result since we add them separately
       } else {
         bends = smartRoute(startStandoff, endStandoff, items);

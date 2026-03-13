@@ -1,8 +1,7 @@
 // src/services/projectApi.ts
 import axios from "axios";
 
-const API_BASE =
-  "http://localhost:8000/api"; // default to your DRF prefix
+const API_BASE = "http://localhost:8000/api"; // default to your DRF prefix
 
 export interface ApiProject {
   id: number;
@@ -28,10 +27,13 @@ const client = axios.create({
 // Add JWT Authorization header if token exists (safe config.headers handling)
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem("access_token");
+
   if (token) {
     config.headers = config.headers ?? {};
-    (config.headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+    (config.headers as Record<string, string>)["Authorization"] =
+      `Bearer ${token}`;
   }
+
   return config;
 });
 
@@ -40,6 +42,7 @@ client.interceptors.request.use((config) => {
 /** GET /project/ */
 export const fetchProjects = async (): Promise<ApiProject[]> => {
   const res = await client.get("/project/");
+
   // backend returns { status: "...", projects: [...] }
   return res.data?.projects ?? [];
 };
@@ -47,6 +50,7 @@ export const fetchProjects = async (): Promise<ApiProject[]> => {
 /** GET /project/:id/ */
 export const fetchProject = async (id: number): Promise<any> => {
   const res = await client.get(`/project/${id}/`);
+
   // ProjectDetailView returns full project object (possibly wrapped)
   return res.data;
 };
@@ -54,9 +58,10 @@ export const fetchProject = async (id: number): Promise<any> => {
 /** POST /project/ */
 export const createProject = async (
   name: string,
-  description?: string | null
+  description?: string | null,
 ): Promise<ApiProject> => {
   const res = await client.post("/project/", { name, description });
+
   // Your backend returns { message, project } — fallback to res.data
   return res.data?.project ?? res.data;
 };
@@ -77,18 +82,20 @@ export const saveProjectCanvas = async (
     };
     // optional viewport or other fields
     viewport?: any;
-  }
+  },
 ): Promise<any> => {
   const res = await client.put(`/project/${id}/`, payload);
+
   return res.data;
 };
 
 /** PUT /project/:id/ (update only meta is same endpoint) */
 export const updateProjectMeta = async (
   id: number,
-  payload: { name: string; description?: string | null }
+  payload: { name: string; description?: string | null },
 ): Promise<any> => {
   const res = await client.put(`/project/${id}/`, payload);
+
   return res.data;
 };
 

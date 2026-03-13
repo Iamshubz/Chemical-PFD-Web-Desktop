@@ -34,41 +34,41 @@ interface ExportModalProps {
 
 // Format options as export buttons (previously presets)
 const formatOptions = [
-  { 
-    key: "png", 
-    label: "PNG", 
+  {
+    key: "png",
+    label: "PNG",
     icon: <TbPhoto />,
     description: "High-quality raster image",
     color: "bg-blue-50 dark:bg-blue-900/20",
     borderColor: "border-blue-200 dark:border-blue-800",
-    extension: ".png"
+    extension: ".png",
   },
-  { 
-    key: "jpg", 
-    label: "JPEG", 
+  {
+    key: "jpg",
+    label: "JPEG",
     icon: <FiImage />,
     description: "Compressed image format",
     color: "bg-green-50 dark:bg-green-900/20",
     borderColor: "border-green-200 dark:border-green-800",
-    extension: ".jpg"
+    extension: ".jpg",
   },
-  { 
-    key: "pdf", 
-    label: "PDF", 
+  {
+    key: "pdf",
+    label: "PDF",
     icon: <TbFileTypePdf />,
     description: "Vector document format",
     color: "bg-red-50 dark:bg-red-900/20",
     borderColor: "border-red-200 dark:border-red-800",
-    extension: ".pdf"
+    extension: ".pdf",
   },
-  { 
-    key: "export", 
-    label: "Diagram File", 
+  {
+    key: "export",
+    label: "Diagram File",
     icon: <TbFileExport />,
     description: "Complete diagram state",
     color: "bg-purple-50 dark:bg-purple-900/20",
     borderColor: "border-purple-200 dark:border-purple-800",
-    extension: ".pfd"
+    extension: ".pfd",
   },
 ];
 
@@ -90,22 +90,21 @@ export default function ExportModal({
   const [options, setOptions] = useState<ExportOptions>(defaultExportOptions);
   const [filename, setFilename] = useState<string>(DEFAULT_FILENAME);
   const [isEditingName, setIsEditingName] = useState<boolean>(false);
-  
-  const isDiagramFormat = options.format === 'export';
-  const currentFormat = formatOptions.find(f => f.key === options.format);
-  const fullFilename = `${filename}${currentFormat?.extension || ''}`;
+
+  const isDiagramFormat = options.format === "export";
+  const currentFormat = formatOptions.find((f) => f.key === options.format);
+  const fullFilename = `${filename}${currentFormat?.extension || ""}`;
 
   const handleFormatSelect = (formatKey: ExportFormat) => {
     setOptions((prev) => ({
       ...prev,
       format: formatKey,
       // Set default options based on format
-      ...(formatKey === 'export' 
+      ...(formatKey === "export"
         ? { includeGrid: false, includeWatermark: false }
-        : formatKey === 'pdf' 
-          ? { scale: 2, quality: 'high' }
-          : {}
-      ),
+        : formatKey === "pdf"
+          ? { scale: 2, quality: "high" }
+          : {}),
     }));
   };
 
@@ -124,6 +123,7 @@ export default function ExportModal({
     setIsEditingName(false);
     // Trim and validate filename
     const trimmed = filename.trim();
+
     if (trimmed) {
       setFilename(trimmed);
     } else {
@@ -134,20 +134,22 @@ export default function ExportModal({
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     // Remove extension if user tries to add it
     let newName = e.target.value;
-    const formatExt = currentFormat?.extension || '';
+    const formatExt = currentFormat?.extension || "";
+
     if (formatExt && newName.endsWith(formatExt)) {
       newName = newName.slice(0, -formatExt.length);
     }
-    
+
     // Basic filename validation (no illegal characters)
-    const sanitized = newName.replace(/[<>:"/\\|?*]/g, '');
+    const sanitized = newName.replace(/[<>:"/\\|?*]/g, "");
+
     setFilename(sanitized);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       handleNameSave();
-    } else if (e.key === 'Escape') {
+    } else if (e.key === "Escape") {
       setIsEditingName(false);
       setFilename(filename.trim() || DEFAULT_FILENAME);
     }
@@ -180,37 +182,33 @@ export default function ExportModal({
               {!isEditingName && (
                 <Button
                   size="sm"
-                  variant="light"
                   startContent={<FiEdit2 className="text-sm" />}
+                  variant="light"
                   onPress={handleNameEdit}
                 >
                   Edit Name
                 </Button>
               )}
             </div>
-            
+
             {isEditingName ? (
               <div className="flex gap-2">
                 <Input
                   autoFocus
                   className="flex-1"
-                  placeholder="Enter filename"
-                  size="sm"
-                  value={filename}
-                  onChange={handleNameChange}
-                  onKeyDown={handleKeyDown}
-                  onBlur={handleNameSave}
                   endContent={
                     <span className="text-gray-400 text-sm">
                       {currentFormat?.extension}
                     </span>
                   }
-                />
-                <Button
+                  placeholder="Enter filename"
                   size="sm"
-                  color="primary"
-                  onPress={handleNameSave}
-                >
+                  value={filename}
+                  onBlur={handleNameSave}
+                  onChange={handleNameChange}
+                  onKeyDown={handleKeyDown}
+                />
+                <Button color="primary" size="sm" onPress={handleNameSave}>
                   Save
                 </Button>
                 <Button
@@ -241,7 +239,7 @@ export default function ExportModal({
                 </div>
               </div>
             )}
-            
+
             <p className="text-xs text-gray-500 mt-2">
               The exported file will be saved as "{fullFilename}"
             </p>
@@ -266,7 +264,9 @@ export default function ExportModal({
                   <CardBody className="p-3">
                     <div className="flex items-center gap-2">
                       {format.icon}
-                      <span className="text-sm font-medium">{format.label}</span>
+                      <span className="text-sm font-medium">
+                        {format.label}
+                      </span>
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
                       {format.description}
@@ -310,7 +310,9 @@ export default function ExportModal({
                 <div>
                   <div className="flex justify-between mb-2">
                     <h3 className="text-sm font-medium">Scale</h3>
-                    <span className="text-sm text-gray-500">{options.scale}x</span>
+                    <span className="text-sm text-gray-500">
+                      {options.scale}x
+                    </span>
                   </div>
                   <Slider
                     className="max-w-md"
@@ -320,7 +322,10 @@ export default function ExportModal({
                     step={0.1}
                     value={options.scale}
                     onChange={(value) =>
-                      setOptions((prev) => ({ ...prev, scale: value as number }))
+                      setOptions((prev) => ({
+                        ...prev,
+                        scale: value as number,
+                      }))
                     }
                   />
                 </div>
@@ -336,9 +341,9 @@ export default function ExportModal({
                   <Switch
                     isSelected={options.includeGrid}
                     onValueChange={(value) =>
-                      setOptions((prev) => ({ 
-                        ...prev, 
-                        includeGrid: value
+                      setOptions((prev) => ({
+                        ...prev,
+                        includeGrid: value,
                       }))
                     }
                   >
@@ -351,7 +356,10 @@ export default function ExportModal({
                   <Switch
                     isSelected={options.includeWatermark}
                     onValueChange={(value) =>
-                      setOptions((prev) => ({ ...prev, includeWatermark: value }))
+                      setOptions((prev) => ({
+                        ...prev,
+                        includeWatermark: value,
+                      }))
                     }
                   >
                     <div className="flex items-center gap-2">
@@ -416,9 +424,11 @@ export default function ExportModal({
                                 ? "ring-2 ring-blue-500 ring-offset-2"
                                 : ""
                             }`}
-                            style={{ 
-                              backgroundColor: color === "transparent" ? "#ffffff" : color,
-                              borderColor: color === "transparent" ? "#e5e7eb" : color
+                            style={{
+                              backgroundColor:
+                                color === "transparent" ? "#ffffff" : color,
+                              borderColor:
+                                color === "transparent" ? "#e5e7eb" : color,
                             }}
                             onClick={() =>
                               setOptions((prev) => ({
@@ -452,23 +462,26 @@ export default function ExportModal({
               <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
                 <div className="flex items-center gap-2 text-purple-700 dark:text-purple-300 mb-2">
                   <TbFileExport className="text-lg" />
-                  <span className="text-sm font-medium">Diagram File Export</span>
+                  <span className="text-sm font-medium">
+                    Diagram File Export
+                  </span>
                 </div>
                 <p className="text-sm text-purple-600 dark:text-purple-400">
-                  Saves the complete diagram state including all components, connections, and viewport settings. 
-                  Can be reopened later to continue editing.
+                  Saves the complete diagram state including all components,
+                  connections, and viewport settings. Can be reopened later to
+                  continue editing.
                 </p>
                 <div className="mt-3 text-xs text-purple-500 dark:text-purple-400">
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="w-2 h-2 rounded-full bg-purple-400"></div>
+                    <div className="w-2 h-2 rounded-full bg-purple-400" />
                     <span>Saves all component positions and properties</span>
                   </div>
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="w-2 h-2 rounded-full bg-purple-400"></div>
+                    <div className="w-2 h-2 rounded-full bg-purple-400" />
                     <span>Preserves all connections and waypoints</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-purple-400"></div>
+                    <div className="w-2 h-2 rounded-full bg-purple-400" />
                     <span>Saves current viewport zoom and position</span>
                   </div>
                 </div>

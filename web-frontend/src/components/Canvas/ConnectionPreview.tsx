@@ -26,25 +26,25 @@ export const ConnectionPreview = ({
     <>
       {/* dotted preview wire */}
       <Path
+        dash={[6, 6]} // ← dotted effect
         data={pathData}
-        stroke="#94a3b8"
-        strokeWidth={2}
-        dash={[6, 6]}      // ← dotted effect
         lineCap="round"
         lineJoin="round"
         listening={false}
+        stroke="#94a3b8"
+        strokeWidth={2}
       />
 
       {/* optional arrow head */}
       {endPoint && arrowAngle !== undefined && (
         <RegularPolygon
-          sides={3}
-          radius={5}
-          x={endPoint.x}
-          y={endPoint.y}
-          rotation={arrowAngle}
           fill="#94a3b8"
           listening={false}
+          radius={5}
+          rotation={arrowAngle}
+          sides={3}
+          x={endPoint.x}
+          y={endPoint.y}
         />
       )}
     </>

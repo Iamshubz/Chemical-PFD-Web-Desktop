@@ -1,5 +1,5 @@
 // src/utils/pathfinding/grid.ts
-import { Point, GridPoint, Rect } from './types';
+import { Point, GridPoint, Rect } from "./types";
 
 /**
  * Grid system configuration
@@ -29,11 +29,16 @@ export function toCanvas(gridPoint: GridPoint): Point {
 /**
  * Convert rectangle to grid bounds
  */
-export function rectToGridBounds(rect: Rect): { minX: number; minY: number; maxX: number; maxY: number } {
+export function rectToGridBounds(rect: Rect): {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+} {
     const minX = Math.floor(rect.x / GRID_SIZE);
     const minY = Math.floor(rect.y / GRID_SIZE);
-    const maxX = Math.floor((rect.x + rect.width) / GRID_SIZE);
-    const maxY = Math.floor((rect.y + rect.height) / GRID_SIZE);
+    const maxX = Math.floor((rect.x + rect.width - 1) / GRID_SIZE);
+    const maxY = Math.floor((rect.y + rect.height - 1) / GRID_SIZE);
 
     return { minX, minY, maxX, maxY };
 }
@@ -44,13 +49,15 @@ export function rectToGridBounds(rect: Rect): { minX: number; minY: number; maxX
 export function buildObstacleGrid(
     obstacles: Rect[],
     canvasWidth: number,
-    canvasHeight: number
+    canvasHeight: number,
 ): boolean[][] {
     const cols = Math.ceil(canvasWidth / GRID_SIZE);
     const rows = Math.ceil(canvasHeight / GRID_SIZE);
 
     // Initialize grid (false = free, true = blocked)
-    const grid: boolean[][] = Array(rows).fill(null).map(() => Array(cols).fill(false));
+    const grid: boolean[][] = Array(rows)
+        .fill(null)
+        .map(() => Array(cols).fill(false));
 
     // Mark obstacles
     for (const obstacle of obstacles) {
@@ -71,7 +78,10 @@ export function buildObstacleGrid(
 /**
  * Get grid bounds for a canvas
  */
-export function getGridBounds(canvasWidth: number, canvasHeight: number): { width: number; height: number } {
+export function getGridBounds(
+    canvasWidth: number,
+    canvasHeight: number,
+): { width: number; height: number } {
     return {
         width: Math.ceil(canvasWidth / GRID_SIZE),
         height: Math.ceil(canvasHeight / GRID_SIZE),

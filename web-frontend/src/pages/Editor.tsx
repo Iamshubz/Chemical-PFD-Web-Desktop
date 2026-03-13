@@ -1,7 +1,7 @@
 // Editor.tsx (integrated version)
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Stage, Layer, Line, Shape } from "react-konva";
+import { Stage, Layer, Shape } from "react-konva";
 import Konva from "konva";
 import {
   Button,
@@ -24,6 +24,9 @@ import { MdZoomIn, MdZoomOut, MdCenterFocusWeak } from "react-icons/md";
 import { FiDownload } from "react-icons/fi";
 import { Popover, PopoverTrigger, PopoverContent } from "@heroui/react";
 import { TbGridDots, TbGridPattern } from "react-icons/tb";
+
+import { buildGraph } from "../utils/graph/buildGraph";
+import { validateGraph } from "../utils/graph/validateGraph";
 
 import { ThemeSwitch } from "@/components/theme-switch";
 import { CanvasItemImage } from "@/components/Canvas/CanvasItemImage";
@@ -72,8 +75,6 @@ import {
   createProject,
 } from "@/api/projectApi";
 import { convertToBackendFormat, SavedProject } from "@/utils/projectStorage";
-import { buildGraph } from "../utils/graph/buildGraph";
-import { validateGraph } from "../utils/graph/validateGraph";
 
 type Shortcut = {
   key: string;
@@ -91,6 +92,7 @@ const resolveImageUrl = (url: string) => {
   // If relative path (e.g. /media/...), prepend backend host
   // Assuming backend is at localhost:8000 based on projectApi.ts
   if (url.startsWith("/")) return `http://localhost:8000${url}`;
+
   return url;
 };
 
@@ -350,7 +352,8 @@ export default function Editor() {
         className="absolute inset-0 z-50 flex items-center justify-center bg-blue-500/10 backdrop-blur-sm border-4 border-dashed border-blue-400 rounded-lg"
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
-        onDrop={handleDrop}>
+        onDrop={handleDrop}
+      >
         <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow-2xl">
           <TbFileImport className="w-16 h-16 text-blue-500 mx-auto mb-4" />
           <p className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">
@@ -406,6 +409,7 @@ export default function Editor() {
 
             if (!img) {
               resolve();
+
               return;
             }
 
@@ -413,6 +417,7 @@ export default function Editor() {
             if (img instanceof HTMLImageElement) {
               if (img.complete && img.naturalWidth > 0) {
                 resolve();
+
                 return;
               }
               img.onload = () => resolve();
@@ -431,6 +436,7 @@ export default function Editor() {
   const handleExport = async (options: ExportOptions) => {
     if (!projectId || !currentState) {
       alert("No project loaded");
+
       return;
     }
 
@@ -461,6 +467,7 @@ export default function Editor() {
 
         exportToDiagramFile(exportData, fileName);
         setShowExportModal(false);
+
         return;
       }
 
@@ -526,6 +533,7 @@ export default function Editor() {
 
       // IMPORTANT: Create a temporary stage clone with fixed background
       const tempContainer = document.createElement("div");
+
       tempContainer.style.position = "absolute";
       tempContainer.style.left = "-9999px";
       tempContainer.style.top = "-9999px";
@@ -549,12 +557,14 @@ export default function Editor() {
           height: stage.height(),
           fill: backgroundFill,
         });
+
         bgLayer.add(bgRect);
         tempStage.add(bgLayer);
       }
 
       // Clone the main layer (skip grid if not needed)
       const originalLayer = stage.findOne("Layer");
+
       if (originalLayer) {
         const clonedLayer = originalLayer.clone({
           listening: false,
@@ -591,6 +601,7 @@ export default function Editor() {
 
         // Create image from data URL
         const img = new Image();
+
         await new Promise((resolve, reject) => {
           img.onload = resolve;
           img.onerror = reject;
@@ -627,6 +638,7 @@ export default function Editor() {
         // Set PDF background color (convert hex to RGB)
         if (backgroundFill !== "rgba(0,0,0,0)") {
           const rgb = hexToRgb(backgroundFill);
+
           if (rgb) {
             pdf.setFillColor(rgb.r, rgb.g, rgb.b);
             pdf.rect(0, 0, pdfWidth, pdfHeight, "F");
@@ -650,6 +662,7 @@ export default function Editor() {
           : `diagram-${Date.now()}${extension}`;
 
         const link = document.createElement("a");
+
         link.download = filename;
         link.href = dataUrl;
         document.body.appendChild(link);
@@ -944,7 +957,14 @@ export default function Editor() {
 
   // --- Helpers ---
   const connectionPaths = useMemo(
-    () => calculateManualPathsWithBridges(connections, droppedItems, 2000, 1500, true),
+    () =>
+      calculateManualPathsWithBridges(
+        connections,
+        droppedItems,
+        2000,
+        1500,
+        true,
+      ),
     [connections, droppedItems],
   );
 
@@ -1071,6 +1091,7 @@ export default function Editor() {
 
       // Check if target is an input field
       const target = e.target as HTMLElement;
+
       if (
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
@@ -1300,27 +1321,7 @@ export default function Editor() {
 
     // Single item update
     editorStore.updateItem(projectId, itemId, snappedUpdates);
-    // NEW FUNCTION
-    const handleWaypointDrag = (
-      connectionId: number,
-      index: number,
-      pos: { x: number; y: number },
-    ) => {
-      setConnections((prev) =>
-        prev.map((conn) => {
-          if (conn.id !== connectionId) return conn;
 
-          const waypoints = conn.waypoints ? [...conn.waypoints] : [];
-
-          waypoints[index] = pos;
-
-          return {
-            ...conn,
-            waypoints,
-          };
-        }),
-      );
-    };
     // If the component moved, reset connection waypoints so routing recalculates
     if (updates.x !== undefined || updates.y !== undefined) {
       const relatedConnections = connections.filter(
@@ -1397,6 +1398,7 @@ export default function Editor() {
         if (start && end) {
           const startStandoff = getStandoff(start, sourceGrip);
           const endStandoff = getStandoff(end, targetGrip);
+
           initialWaypoints = smartRoute(
             startStandoff,
             endStandoff,
@@ -1498,54 +1500,54 @@ export default function Editor() {
   };
 
   // Grid Layer Component
-  const GridLayer = React.memo(
-    ({
-      width,
-      height,
-      gridSize,
-      showGrid,
-    }: {
-      width: number;
-      height: number;
-      gridSize: number;
-      showGrid: boolean;
-    }) => {
-      if (!showGrid) return null;
+  const GridLayer = React.memo(function GridLayer({
+    width,
+    height,
+    gridSize,
+    showGrid,
+  }: {
+    width: number;
+    height: number;
+    gridSize: number;
+    showGrid: boolean;
+  }) {
+    if (!showGrid) return null;
 
-      return (
-        <Layer listening={false}>
-          <Shape
-            opacity={0.3}
-            perfectDrawEnabled={false}
-            sceneFunc={(context: any, shape: Konva.Shape) => {
-              context.beginPath();
+    return (
+      <Layer listening={false}>
+        <Shape
+          opacity={0.3}
+          perfectDrawEnabled={false}
+          sceneFunc={(context: any, shape: Konva.Shape) => {
+            context.beginPath();
 
-              const startX = -5000;
-              const endX = width + 5000;
-              const startY = -5000;
-              const endY = height + 5000;
+            const startX = -5000;
+            const endX = width + 5000;
+            const startY = -5000;
+            const endY = height + 5000;
 
-              // Vertical Lines
-              for (let x = startX; x <= endX; x += gridSize) {
-                context.moveTo(x, startY);
-                context.lineTo(x, endY);
-              }
+            // Vertical Lines
+            for (let x = startX; x <= endX; x += gridSize) {
+              context.moveTo(x, startY);
+              context.lineTo(x, endY);
+            }
 
-              // Horizontal Lines
-              for (let y = startY; y <= endY; y += gridSize) {
-                context.moveTo(startX, y);
-                context.lineTo(endX, y);
-              }
+            // Horizontal Lines
+            for (let y = startY; y <= endY; y += gridSize) {
+              context.moveTo(startX, y);
+              context.lineTo(endX, y);
+            }
 
-              context.fillStrokeShape(shape);
-            }}
-            stroke="#9ca3af"
-            strokeWidth={1}
-          />
-        </Layer>
-      );
-    },
-  );
+            context.fillStrokeShape(shape);
+          }}
+          stroke="#9ca3af"
+          strokeWidth={1}
+        />
+      </Layer>
+    );
+  });
+
+  GridLayer.displayName = "GridLayer";
 
   // --- Preview Connection Logic ---
   let previewPathData: string | null = null;
@@ -1578,10 +1580,11 @@ export default function Editor() {
       [...droppedItems, fakeTarget as any],
       2000,
       1500,
-      true
+      true,
     );
 
     const meta = map[-1];
+
     if (meta) {
       previewPathData = meta.pathData ?? null;
       previewEnd = meta.endPoint;
@@ -1606,7 +1609,8 @@ export default function Editor() {
                 } else {
                   navigate("/dashboard");
                 }
-              }}>
+              }}
+            >
               ←
             </Button>
           </Tooltip>
@@ -1617,7 +1621,8 @@ export default function Editor() {
               <Button
                 className="text-gray-700 dark:text-gray-300"
                 size="sm"
-                variant="light">
+                variant="light"
+              >
                 Edit
               </Button>
             </DropdownTrigger>
@@ -1627,7 +1632,8 @@ export default function Editor() {
                 [!canUndo && "undo", !canRedo && "redo"].filter(
                   Boolean,
                 ) as string[]
-              }>
+              }
+            >
               <DropdownItem key="undo" onPress={handleUndo}>
                 Undo (Ctrl+Z)
               </DropdownItem>
@@ -1654,7 +1660,8 @@ export default function Editor() {
                     setSelectedItemIds(new Set());
                     setSelectedConnectionIds(new Set());
                   }
-                }}>
+                }}
+              >
                 Delete Selected (d)
               </DropdownItem>
               <DropdownItem key="clear" onPress={handleClearSelection}>
@@ -1668,7 +1675,8 @@ export default function Editor() {
               <Button
                 className="text-gray-700 dark:text-gray-300"
                 size="sm"
-                variant="light">
+                variant="light"
+              >
                 View
               </Button>
             </DropdownTrigger>
@@ -1702,7 +1710,8 @@ export default function Editor() {
             className="border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300"
             size="sm"
             variant="bordered"
-            onPress={handleNewProjectClick}>
+            onPress={handleNewProjectClick}
+          >
             New Project
           </Button>
           <Button
@@ -1719,7 +1728,8 @@ export default function Editor() {
               input.accept = ".pfd";
               input.onchange = (e) => handleImportDiagram(e as any);
               input.click();
-            }}>
+            }}
+          >
             Import
           </Button>
           <Button
@@ -1727,7 +1737,8 @@ export default function Editor() {
             size="sm"
             startContent={<FiDownload />}
             variant="bordered"
-            onPress={() => setShowExportModal(true)}>
+            onPress={() => setShowExportModal(true)}
+          >
             Export
           </Button>
           <Button
@@ -1735,7 +1746,8 @@ export default function Editor() {
             size="sm"
             startContent={<FiDownload />}
             variant="bordered"
-            onPress={() => setShowReportModal(true)}>
+            onPress={() => setShowReportModal(true)}
+          >
             Generate Report
           </Button>
 
@@ -1743,7 +1755,8 @@ export default function Editor() {
             className="bg-blue-600 text-white hover:bg-blue-700"
             isDisabled={!projectId}
             size="sm"
-            onPress={() => setShowSaveModal(true)}>
+            onPress={() => setShowSaveModal(true)}
+          >
             Save Changes
           </Button>
         </div>
@@ -1758,16 +1771,17 @@ export default function Editor() {
             minmax(0, 1fr)
             ${rightCollapsed ? "48px" : "288px"}
           `,
-        }}>
+        }}
+      >
         {/* Left Sidebar - Component Library */}
         <div className="relative overflow-hidden border-r border-gray-200 dark:border-gray-800">
           {!leftCollapsed && (
             <ComponentLibrarySidebar
               components={components}
-              initialSearchQuery={searchQuery}
-              selectedCategory={selectedCategory}
-              isLoading={isLoading}
               error={error}
+              initialSearchQuery={searchQuery}
+              isLoading={isLoading}
+              selectedCategory={selectedCategory}
               onCategoryChange={(cat) => setSelectedCategory(cat)}
               onDragStart={handleDragStart}
               onSearch={(q) => setSearchQuery(q)}
@@ -1813,7 +1827,8 @@ export default function Editor() {
 
             // Otherwise, it's a component drag from the sidebar
             handleDrop(e);
-          }}>
+          }}
+        >
           <FileDropZone />
 
           {/* Left Sidebar Collapse Button */}
@@ -1827,7 +1842,8 @@ export default function Editor() {
             hover:border-blue-400/50 dark:hover:border-blue-500/50
             group pointer-events-auto"
             title={leftCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-            onClick={() => setLeftCollapsed((v) => !v)}>
+            onClick={() => setLeftCollapsed((v) => !v)}
+          >
             {!leftCollapsed ? (
               <TbLayoutSidebarLeftCollapse className="w-5 h-5 text-gray-600 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
             ) : (
@@ -1846,7 +1862,8 @@ export default function Editor() {
             hover:border-blue-400/50 dark:hover:border-blue-500/50
             group pointer-events-auto"
             title={rightCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-            onClick={() => setRightCollapsed((v: boolean) => !v)}>
+            onClick={() => setRightCollapsed((v: boolean) => !v)}
+          >
             {!rightCollapsed ? (
               <TbLayoutSidebarRightCollapse className="w-5 h-5 text-gray-600 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
             ) : (
@@ -1874,6 +1891,7 @@ export default function Editor() {
 
               if (clickedOnEmpty && isDrawingConnection) {
                 handleCancelDrawing();
+
                 return;
               }
 
@@ -1896,7 +1914,8 @@ export default function Editor() {
               handleStageMouseMove();
             }}
             onMouseUp={handleStageMouseUp}
-            onWheel={handleWheel}>
+            onWheel={handleWheel}
+          >
             <GridLayer
               gridSize={gridSize}
               height={stageSize.height}
@@ -1906,40 +1925,20 @@ export default function Editor() {
             <Layer>
               {/* Render Connections */}
               {connections.map((connection: Connection) => {
-                const routerWaypoints =
-                  connectionPaths[connection.id]?.waypoints || [];
                 const savedWaypoints = connection.waypoints || [];
 
-                const pointsToRender =
-                  savedWaypoints.length > 0 ? savedWaypoints : routerWaypoints;
+                // Only show draggable handles for explicit user waypoints
+                const pointsToRender = savedWaypoints;
 
                 return (
                   <ConnectionLine
                     key={connection.id}
                     arrowAngle={connectionPaths[connection.id]?.arrowAngle}
-                    connection={connection}
                     isSelected={selectedConnectionIds.has(connection.id)}
                     items={droppedItems}
                     pathData={connectionPaths[connection.id]?.pathData}
                     points={pointsToRender}
                     targetPosition={connectionPaths[connection.id]?.endPoint}
-                    onWaypointDrag={(
-                      index: number,
-                      pos: { x: number; y: number },
-                    ) => {
-                      if (!projectId) return;
-
-                      const base =
-                        savedWaypoints.length > 0
-                          ? [...savedWaypoints]
-                          : [...routerWaypoints];
-
-                      base[index] = pos;
-
-                      editorStore.updateConnection(projectId, connection.id, {
-                        waypoints: base,
-                      });
-                    }}
                     onSelect={(e: Konva.KonvaEventObject<MouseEvent>) => {
                       const isCtrl = e.evt.ctrlKey || e.evt.metaKey;
 
@@ -1956,6 +1955,41 @@ export default function Editor() {
                       });
 
                       if (!isCtrl) setSelectedItemIds(new Set());
+
+                      // Add a waypoint when the user clicks a connection without explicit waypoints
+                      if (projectId && savedWaypoints.length === 0) {
+                        const stage = stageRef.current;
+                        const pointer = stage?.getPointerPosition();
+
+                        if (pointer) {
+                          const snapped = snapToGridPosition(
+                            pointer.x,
+                            pointer.y,
+                          );
+
+                          editorStore.updateConnection(
+                            projectId,
+                            connection.id,
+                            {
+                              waypoints: [snapped],
+                            },
+                          );
+                        }
+                      }
+                    }}
+                    onWaypointDrag={(
+                      index: number,
+                      pos: { x: number; y: number },
+                    ) => {
+                      if (!projectId || savedWaypoints.length === 0) return;
+
+                      const base = [...savedWaypoints];
+
+                      base[index] = pos;
+
+                      editorStore.updateConnection(projectId, connection.id, {
+                        waypoints: base,
+                      });
                     }}
                   />
                 );
@@ -1964,9 +1998,9 @@ export default function Editor() {
               {/* Render Temporary Connection Line (Drawing) */}
               {isDrawingConnection && tempConnection && (
                 <ConnectionPreview
-                  pathData={previewPathData}
-                  endPoint={previewEnd}
                   arrowAngle={previewAngle}
+                  endPoint={previewEnd}
+                  pathData={previewPathData}
                 />
               )}
 
@@ -1983,8 +2017,8 @@ export default function Editor() {
                     key={item.id}
                     hoveredGrip={hoveredGrip}
                     isDrawingConnection={isDrawingConnection}
-                    isSelected={selectedItemIds.has(item.id)}
                     isInvalid={isInvalid}
+                    isSelected={selectedItemIds.has(item.id)}
                     item={item}
                     onChange={(newAttrs) =>
                       handleUpdateItem(newAttrs.id, newAttrs)
@@ -2017,14 +2051,16 @@ export default function Editor() {
                 {/* Show Grid Button */}
                 <Tooltip
                   content={showGrid ? "Hide Grid" : "Show Grid"}
-                  placement="top">
+                  placement="top"
+                >
                   <button
                     aria-label="Toggle Grid Visibility"
                     className={`w-8 h-8 flex items-center justify-center rounded-md 
         border border-gray-300 dark:border-gray-700 
         bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 
         transition-all duration-150`}
-                    onClick={() => setShowGrid((prev) => !prev)}>
+                    onClick={() => setShowGrid((prev) => !prev)}
+                  >
                     {showGrid ? (
                       <TbGridDots className="w-4 h-4 text-gray-600 dark:text-gray-300" />
                     ) : (
@@ -2036,7 +2072,8 @@ export default function Editor() {
                 {/* Snap to Grid Switch */}
                 <Tooltip
                   content={snapToGrid ? "Snap Enabled" : "Snap Disabled"}
-                  placement="top">
+                  placement="top"
+                >
                   <Switch
                     aria-label="Snap to Grid"
                     color="primary"
@@ -2096,7 +2133,8 @@ export default function Editor() {
                 transition-all duration-200"
                   disabled={stageScale <= 0.1}
                   title="Zoom Out"
-                  onClick={handleZoomOut}>
+                  onClick={handleZoomOut}
+                >
                   <MdZoomOut className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                 </button>
 
@@ -2106,7 +2144,8 @@ export default function Editor() {
                     className="px-3 py-1.5 text-sm font-medium
                 bg-gray-50 dark:bg-gray-800 
                 rounded-l-md
-                text-gray-700 dark:text-gray-300">
+                text-gray-700 dark:text-gray-300"
+                  >
                     {Math.round(stageScale * 100)}%
                   </div>
                 </div>
@@ -2121,7 +2160,8 @@ export default function Editor() {
                 transition-all duration-200"
                   disabled={droppedItems.length === 0}
                   title="Center to Content"
-                  onClick={handleCenterToContent}>
+                  onClick={handleCenterToContent}
+                >
                   <MdCenterFocusWeak className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                 </button>
 
@@ -2135,7 +2175,8 @@ export default function Editor() {
                 transition-all duration-200"
                   disabled={stageScale >= 3}
                   title="Zoom In"
-                  onClick={handleZoomIn}>
+                  onClick={handleZoomIn}
+                >
                   <MdZoomIn className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                 </button>
               </div>
@@ -2149,7 +2190,8 @@ export default function Editor() {
                   isIconOnly
                   className="rounded-ful bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                   size="sm"
-                  variant="bordered">
+                  variant="bordered"
+                >
                   ?
                 </Button>
               </PopoverTrigger>
@@ -2164,7 +2206,8 @@ export default function Editor() {
                     {shortcuts.map((s) => (
                       <div
                         key={s.label}
-                        className="flex justify-between items-center text-xs">
+                        className="flex justify-between items-center text-xs"
+                      >
                         <span className="text-foreground/70">{s.label}</span>
                         <span className="font-mono bg-content2 px-2 py-0.5 rounded">
                           {s.display}
@@ -2208,7 +2251,8 @@ export default function Editor() {
                   </span>
                   <div className="w-px h-3 bg-white/20" />
                   <span className="text-white/80 text-xs">
-                    Press 'd' to delete selection • Ctrl+Click to add more
+                    Press &apos;d&apos; to delete selection • Ctrl+Click to add
+                    more
                   </span>
                 </div>
               </div>
@@ -2222,7 +2266,7 @@ export default function Editor() {
                 <div className="text-sm text-gray-400 mt-1">
                   Drag components from the sidebar <br />
                   <span className="font-bold">or</span> drag and drop a .pfd
-                  file started.
+                  file to get started.
                 </div>
               </div>
             </div>

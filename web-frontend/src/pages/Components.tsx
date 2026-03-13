@@ -21,8 +21,14 @@ import { useComponents } from "@/context/ComponentContext";
 import { ComponentItem, Grip } from "@/components/Canvas/types";
 
 export default function Components() {
-  const { components, addComponent, updateComponent, deleteComponent, isLoading, error } =
-    useComponents();
+  const {
+    components,
+    addComponent,
+    updateComponent,
+    deleteComponent,
+    isLoading,
+    error,
+  } = useComponents();
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
   // Local type for handling input state (allows strings for "62.0")
@@ -288,7 +294,7 @@ export default function Components() {
       <div className="space-y-8">
         {isLoading ? (
           <div className="flex justify-center items-center py-20">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
           </div>
         ) : error ? (
           <div className="text-center py-20">
@@ -300,7 +306,8 @@ export default function Components() {
         ) : Object.keys(components).length === 0 ? (
           <div className="text-center py-20">
             <p className="text-gray-500 dark:text-gray-400 mb-4">
-              No components yet. Click "Add Component" to create your first component.
+              No components yet. Click "Add Component" to create your first
+              component.
             </p>
           </div>
         ) : (
@@ -319,9 +326,7 @@ export default function Components() {
                       </div>
                     }
                   >
-                    <Card
-                      className="border-none bg-white dark:bg-gray-800 shadow-sm hover:shadow-md group relative"
-                    >
+                    <Card className="border-none bg-white dark:bg-gray-800 shadow-sm hover:shadow-md group relative">
                       <CardBody className="p-4 flex items-center justify-center bg-gray-50/50 dark:bg-gray-900/50">
                         <div className="w-16 h-16 flex items-center justify-center">
                           <Image
