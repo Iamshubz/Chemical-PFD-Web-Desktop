@@ -53,8 +53,8 @@ def main():
     welcome = WelcomeScreen()
     login = LoginScreen()
     create = CreateAccScreen()
-    landing = LandingPage()
     canvas = CanvasScreen()
+    landing = LandingPage(canvas_screen=canvas)
 
     app_state.screens = {
     "welcome": welcome,
