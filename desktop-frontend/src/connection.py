@@ -157,9 +157,18 @@ class Connection:
         ]
 
         # Candidate midpoints – try horizontal-first and vertical-first corners,
-        # plus two bypass rows/columns around all obstacles combined.
+        # plus bypass rows/columns around all obstacles combined.
         candidates = self._candidate_paths(ns, pe, blocked)
+        candidates.extend(self._expanded_fallback_candidates(ns, pe, blocked))
 
+        # Hard rule: choose only paths that do not intersect any component.
+        clear_candidates = [pts for pts in candidates if self._is_path_clear(pts, blocked)]
+        if clear_candidates:
+            best = min(clear_candidates, key=lambda pts: self._path_len(pts))
+            self.path = self._dedup(best)
+            return
+
+        # Conservative fallback: if no clear route found, keep shortest-score path.
         best = min(candidates, key=lambda pts: (self._path_score(pts, blocked), self._path_len(pts)))
         self.path = self._dedup(best)
 
@@ -245,11 +254,43 @@ class Connection:
                     score += 1
         return score
 
+    def _is_path_clear(self, points: list, blocked: list) -> bool:
+        return self._path_score(points, blocked) == 0
+
     def _path_len(self, points: list) -> float:
         total = 0.0
         for i in range(len(points) - 1):
             total += abs(points[i+1].x()-points[i].x()) + abs(points[i+1].y()-points[i].y())
         return total
+
+    def _expanded_fallback_candidates(self, ns: QPointF, pe: QPointF, blocked: list) -> list:
+        """Create wider detours in case default candidates are blocked."""
+        S = QPointF(self.get_start_pos())
+        E = QPointF(self.get_end_pos())
+
+        if blocked:
+            all_left = min(r.left() for r in blocked)
+            all_right = max(r.right() for r in blocked)
+            all_top = min(r.top() for r in blocked)
+            all_bottom = max(r.bottom() for r in blocked)
+        else:
+            all_left = min(ns.x(), pe.x())
+            all_right = max(ns.x(), pe.x())
+            all_top = min(ns.y(), pe.y())
+            all_bottom = max(ns.y(), pe.y())
+
+        gap = self._PAD + 36.0
+        by_top = min(all_top, ns.y(), pe.y()) - gap
+        by_bottom = max(all_bottom, ns.y(), pe.y()) + gap
+        by_left = min(all_left, ns.x(), pe.x()) - gap
+        by_right = max(all_right, ns.x(), pe.x()) + gap
+
+        return [
+            [S, ns, QPointF(ns.x(), by_top), QPointF(pe.x(), by_top), pe, E],
+            [S, ns, QPointF(ns.x(), by_bottom), QPointF(pe.x(), by_bottom), pe, E],
+            [S, ns, QPointF(by_left, ns.y()), QPointF(by_left, pe.y()), pe, E],
+            [S, ns, QPointF(by_right, ns.y()), QPointF(by_right, pe.y()), pe, E],
+        ]
 
     def _seg_hits_rect(self, p1: QPointF, p2: QPointF, rect: QRectF) -> bool:
         """Axis-aligned segment vs padded rect intersection."""
