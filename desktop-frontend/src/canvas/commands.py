@@ -128,10 +128,9 @@ class MoveCommand(QUndoCommand):
             return
         
         for conn in canvas.connections:
-            # Check if connection is attached to this component
-            if conn.start_component == self.component or conn.end_component == self.component:
-                # Recalculate connection path with auto-routing
-                conn.update_path(canvas.components, canvas.connections)
+            # Recalculate connection path of all connections
+            # because this component might have moved into/out of their way
+            conn.update_path(canvas.components, canvas.connections)
 
 
 # ---------------------- FILE OPERATIONS ----------------------

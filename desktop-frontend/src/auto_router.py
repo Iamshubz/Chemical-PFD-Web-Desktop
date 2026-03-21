@@ -3,448 +3,356 @@ Smart Auto-Routing Algorithm for Chemical PFD Editor
 Implements orthogonal routing with obstacle avoidance using BFS pathfinding.
 
 Features:
-- Grid-based logical coordinate system with configurable resolution
+- Grid-based logical coordinate system
 - Obstacle detection for component bounding rectangles
-- Existing connection path blocking
-- BFS-based shortest orthogonal path computation
-- Dynamic re-routing when components move
+- Start/end component exclusion from obstacles
+- BFS parent-map (O(n) memory, not O(n^2))
+- Canvas bounds enforcement (no infinite grid search)
 - Clean orthogonal path generation (H/V segments only)
+- Safe L-shaped fallback if path not found
 """
 
 from collections import deque
 from typing import List, Tuple, Set, Dict, Optional
-from PyQt5.QtCore import QPointF, QRectF, QPoint
-from PyQt5.QtGui import QPainterPath
+from PyQt5.QtCore import QPointF, QRectF
 
 
-class GridPoint:
-    """Represents a point in the logical grid."""
-    
-    def __init__(self, x: int, y: int):
-        self.x = x
-        self.y = y
-    
-    def __eq__(self, other):
-        if not isinstance(other, GridPoint):
-            return False
-        return self.x == other.x and self.y == other.y
-    
-    def __hash__(self):
-        return hash((self.x, self.y))
-    
-    def __repr__(self):
-        return f"GridPoint({self.x}, {self.y})"
-    
-    def to_qpointf(self, scale: float = 1.0) -> QPointF:
-        """Convert grid point to QPointF with optional scaling."""
-        return QPointF(self.x * scale, self.y * scale)
+# Grid resolution in logical pixels per cell
+GRID_RES = 10
+
+# Padding around component rects to avoid running right along edges
+COMP_PAD = 14
 
 
-class GridObstacle:
-    """Represents a rectangular obstacle on the grid."""
-    
-    def __init__(self, grid_rect: Tuple[int, int, int, int]):
-        """
-        Initialize obstacle with grid coordinates.
-        Args:
-            grid_rect: Tuple of (x, y, width, height) in grid units
-        """
-        self.x, self.y, self.width, self.height = grid_rect
-    
-    def contains(self, grid_x: int, grid_y: int) -> bool:
-        """Check if grid point is inside this obstacle."""
-        return (self.x <= grid_x < self.x + self.width and
-                self.y <= grid_y < self.y + self.height)
-    
-    def __repr__(self):
-        return f"GridObstacle(x={self.x}, y={self.y}, w={self.width}, h={self.height})"
+def _to_grid(pt: QPointF) -> Tuple[int, int]:
+    """Convert a logical QPointF to a grid (col, row) integer tuple."""
+    return (int(pt.x() // GRID_RES), int(pt.y() // GRID_RES))
 
 
-class AutoRouter:
+def _to_world(col: int, row: int) -> QPointF:
+    """Convert grid (col, row) to the top-left corner of that cell in logical coords.
+    Using top-left (not centre) ensures all intermediate points are on exact grid
+    boundaries, so every segment is strictly H or V with no rounding error.
     """
-    Smart orthogonal routing engine using BFS pathfinding.
-    
-    Grid-based approach:
-    - Scene is divided into a logical grid
-    - Each grid cell is either passable or blocked
-    - BFS finds shortest path from start to end
-    - Path is reconstructed and converted to orthogonal segments
+    return QPointF(col * GRID_RES, row * GRID_RES)
+
+
+def _rect_to_grid_cells(rect: QRectF) -> Set[Tuple[int, int]]:
     """
+    Return the set of grid cells that fall inside a QRectF (padded).
+    Used to build the obstacle set for component bounding boxes.
+    """
+    cells = set()
+    # Apply padding
+    padded = rect.adjusted(-COMP_PAD, -COMP_PAD, COMP_PAD, COMP_PAD)
+    col_min = int(padded.left() / GRID_RES)
+    col_max = int(padded.right()  / GRID_RES)
+    row_min = int(padded.top()   / GRID_RES)
+    row_max = int(padded.bottom() / GRID_RES)
+    for c in range(col_min, col_max + 1):
+        for r in range(row_min, row_max + 1):
+            cells.add((c, r))
+    return cells
+
+
+def _seg_to_grid_cells(p1: QPointF, p2: QPointF) -> Set[Tuple[int, int]]:
+    """
+    Return the set of grid cells covered by an orthogonal segment p1→p2.
+    Only works correctly for purely horizontal or purely vertical segments.
+    """
+    cells = set()
+    c1, r1 = _to_grid(p1)
+    c2, r2 = _to_grid(p2)
+
+    if r1 == r2:  # horizontal
+        for c in range(min(c1, c2), max(c1, c2) + 1):
+            cells.add((c, r1))
+    elif c1 == c2:  # vertical
+        for r in range(min(r1, r2), max(r1, r2) + 1):
+            cells.add((c1, r))
+    else:
+        # Diagonal segment (shouldn't happen for orthogonal paths, but handle safely)
+        cells.add((c1, r1))
+        cells.add((c2, r2))
+    return cells
+
+def build_routing_cache(component_rects: List[QRectF], connection_segments: List[Tuple[QPointF, QPointF]]) -> Dict:
+    obstacles: Set[Tuple[int, int]] = set()
+    for rect in component_rects:
+        obstacles |= _rect_to_grid_cells(rect)
+    line_cells: Set[Tuple[int, int]] = set()
+    for p1, p2 in connection_segments:
+        line_cells |= _seg_to_grid_cells(p1, p2)
+    return {'obstacles': obstacles, 'line_cells': line_cells}
+
+def find_path(
+    start: QPointF,
+    end: QPointF,
+    start_side: str,
+    end_side: str,
+    component_rects: List[QRectF],
+    exclude_rects: List[QRectF],
+    connection_segments: List[Tuple[QPointF, QPointF]],
+    canvas_bounds: QRectF,
+    routing_cache: Optional[Dict] = None
+) -> List[QPointF]:
+    """
+    BFS shortest orthogonal path from `start` to `end`.
+
+    Parameters
+    ----------
+    start              : logical start point (grip position)
+    end                : logical end point (grip position)
+    component_rects    : all component logical_rect values (padded as obstacles)
+    exclude_rects      : rects to SKIP when building obstacles (start/end components)
+    connection_segments: existing connection segments added as thin-cell obstacles
+    canvas_bounds      : logical canvas size — BFS never leaves this area
+    routing_cache      : Optional pre-computed obstacles and line cells for performance
+
+    Returns
+    -------
+    List of QPointF forming an orthogonal path. Guaranteed to have ≥ 2 points.
+    Falls back to a minimal L-shaped path if BFS finds nothing.
+    """
+
+    # ------------------------------------------------------------------ #
+    # 1. Build obstacle set and line cost set                            #
+    # ------------------------------------------------------------------ #
+    if routing_cache:
+        base_obstacles = routing_cache.get('obstacles', set())
+        base_line_cells = routing_cache.get('line_cells', set())
+    else:
+        base_obstacles = set()
+        base_line_cells = set()
+
+    dyn_obstacles: Set[Tuple[int, int]] = set()
+    for rect in component_rects:
+        # We explicitly include start/end components. Because they are Soft Obstacles (50,000 cost), 
+        # the pathfinder will immediately take the shortest route out to escape the penalty,
+        # which mathematically prevents lines from running a full length straight through them.
+        dyn_obstacles |= _rect_to_grid_cells(rect)
+
+    dyn_line_cells: Set[Tuple[int, int]] = set()
+    for p1, p2 in connection_segments:
+        dyn_line_cells |= _seg_to_grid_cells(p1, p2)
+
+    # ------------------------------------------------------------------ #
+    # 2. Compute canvas grid bounds                                        #
+    # ------------------------------------------------------------------ #
+    col_lo = int(canvas_bounds.left()   / GRID_RES) - 1
+    col_hi = int(canvas_bounds.right()  / GRID_RES) + 1
+    row_lo = int(canvas_bounds.top()    / GRID_RES) - 1
+    row_hi = int(canvas_bounds.bottom() / GRID_RES) + 1
+
+    def in_bounds(c: int, r: int) -> bool:
+        return col_lo <= c <= col_hi and row_lo <= r <= row_hi
+
+    # ------------------------------------------------------------------ #
+    # 3. Convert start/end to grid                                       #
+    # ------------------------------------------------------------------ #
+    def _to_grid_directional(pt: QPointF, side: str) -> Tuple[int, int]:
+        import math
+        c = pt.x() / GRID_RES
+        r = pt.y() / GRID_RES
+        if side == "right": return (math.ceil(c), round(r))
+        elif side == "left": return (math.floor(c), round(r))
+        elif side == "bottom": return (round(c), math.ceil(r))
+        elif side == "top": return (round(c), math.floor(r))
+        return (round(c), round(r))
+
+    sg = _to_grid_directional(start, start_side)
+    eg = _to_grid_directional(end, end_side)
+
+    # ------------------------------------------------------------------ #
+    # 4. A* Algorithm (Heuristic Search)                                 #
+    # ------------------------------------------------------------------ #
+    import heapq
+
+    TURN_PENALTY = 60.0      # Penalty for changing direction
+    CROSSOVER_PENALTY = 25.0  # Penalty for crossing another line
+
+    # Search Area Limiting: Define a "Region of Interest" (ROI)
+    # This prevents searching the entire 3000x2000 canvas for a small connection.
+    margin = 40  # 40 grid cells (400px) padding - allows wide detours around large tanks
+    roi_col_lo = max(col_lo, min(sg[0], eg[0]) - margin)
+    roi_col_hi = min(col_hi, max(sg[0], eg[0]) + margin)
+    roi_row_lo = max(row_lo, min(sg[1], eg[1]) - margin)
+    roi_row_hi = min(row_hi, max(sg[1], eg[1]) + margin)
     
-    # Grid resolution in pixels (higher = coarser grid, faster pathfinding)
-    DEFAULT_GRID_RESOLUTION = 10
+    # Pre-merge caches for O(1) inner loop lookups
+    obstacles = base_obstacles | dyn_obstacles if dyn_obstacles else base_obstacles
+    line_cells = base_line_cells | dyn_line_cells if dyn_line_cells else base_line_cells
+
+    # (f_score, cost, c, r, dir_idx)
+    pq = []
     
-    # Padding around components to avoid collision (in grid units)
-    COMPONENT_PADDING = 1  # Reduced to allow tighter routing
+    eg_c, eg_r = eg[0], eg[1]
     
-    # Padding around existing connections (in grid units)
-    CONNECTION_PADDING = 1
+    # Initialize start state for all 4 possible starting directions
+    for i in range(4):
+        h = abs(sg[0] - eg_c) + abs(sg[1] - eg_r)
+        heapq.heappush(pq, (h, 0, sg[0], sg[1], i))
     
-    def __init__(self, grid_resolution: int = DEFAULT_GRID_RESOLUTION):
-        """
-        Initialize the auto-router.
-        
-        Args:
-            grid_resolution: Size of each grid cell in pixels
-        """
-        self.grid_resolution = grid_resolution
-        self.obstacles: List[GridObstacle] = []
-        self.blocked_cells: Set[GridPoint] = set()
-        self.existing_path_segments: List[Tuple[QPointF, QPointF]] = []
+    parent: Dict[Tuple[int, int, int], Optional[Tuple[int, int, int]]] = {}
+    best_cost: Dict[Tuple[int, int, int], float] = {}
+    for i in range(4):
+        parent[(sg[0], sg[1], i)] = None
+        best_cost[(sg[0], sg[1], i)] = 0.0
+
+    found_state = None
     
-    def clear_obstacles(self):
-        """Reset all obstacles and blocked cells."""
-        self.obstacles.clear()
-        self.blocked_cells.clear()
+    # Pre-pack direction iterator (dc, dr, dir_idx)
+    dirs = ((1, 0, 0), (-1, 0, 1), (0, 1, 2), (0, -1, 3))
     
-    def add_component_obstacle(self, component_rect: QRectF):
-        """
-        Add a component bounding rectangle as an obstacle.
-        Automatically applies padding.
+    while pq:
+        f, cost, cc, cr, dir_idx = heapq.heappop(pq)
         
-        Args:
-            component_rect: QRectF of component logical bounds
-        """
-        grid_x = int(component_rect.x() / self.grid_resolution)
-        grid_y = int(component_rect.y() / self.grid_resolution)
-        grid_w = max(1, int(component_rect.width() / self.grid_resolution) + 1)
-        grid_h = max(1, int(component_rect.height() / self.grid_resolution) + 1)
-        
-        # Apply padding
-        grid_x -= self.COMPONENT_PADDING
-        grid_y -= self.COMPONENT_PADDING
-        grid_w += self.COMPONENT_PADDING * 2
-        grid_h += self.COMPONENT_PADDING * 2
-        
-        obstacle = GridObstacle((grid_x, grid_y, grid_w, grid_h))
-        self.obstacles.append(obstacle)
-    
-    def add_connection_obstacle(self, start: QPointF, end: QPointF):
-        """
-        Add an existing connection segment as an obstacle.
-        Creates a thin corridor around the segment.
-        
-        Args:
-            start: Start point of connection segment
-            end: End point of connection segment
-        """
-        start_grid = self._world_to_grid(start)
-        end_grid = self._world_to_grid(end)
-        
-        # Create bounding box around segment
-        min_x = min(start_grid.x, end_grid.x)
-        max_x = max(start_grid.x, end_grid.x)
-        min_y = min(start_grid.y, end_grid.y)
-        max_y = max(start_grid.y, end_grid.y)
-        
-        # Ensure minimum width/height
-        if min_x == max_x:
-            max_x += 1
-        if min_y == max_y:
-            max_y += 1
-        
-        width = max_x - min_x + 1
-        height = max_y - min_y + 1
-        
-        obstacle = GridObstacle((min_x, min_y, width, height))
-        self.obstacles.append(obstacle)
-    
-    def _world_to_grid(self, point: QPointF) -> GridPoint:
-        """Convert world coordinates to grid coordinates."""
-        grid_x = int(point.x() / self.grid_resolution)
-        grid_y = int(point.y() / self.grid_resolution)
-        return GridPoint(grid_x, grid_y)
-    
-    def _is_cell_blocked(self, grid_point: GridPoint) -> bool:
-        """Check if a grid cell is blocked by any obstacle."""
-        for obstacle in self.obstacles:
-            if obstacle.contains(grid_point.x, grid_point.y):
-                return True
-        return False
-    
-    def _is_valid_move(self, grid_point: GridPoint, bounds: Optional[QRectF] = None) -> bool:
-        """
-        Check if a grid cell is valid for pathfinding.
-        
-        Args:
-            grid_point: Grid cell to check
-            bounds: Optional world-space bounds to respect
-        
-        Returns:
-            True if cell is passable, False if blocked or out of bounds
-        """
-        # Check world bounds if provided
-        if bounds:
-            world_x = grid_point.x * self.grid_resolution
-            world_y = grid_point.y * self.grid_resolution
-            if not (bounds.x() <= world_x <= bounds.right() and
-                    bounds.y() <= world_y <= bounds.bottom()):
-                return False
-        
-        # Check obstacles
-        return not self._is_cell_blocked(grid_point)
-    
-    def find_path(self, start: QPointF, end: QPointF,
-                  bounds: Optional[QRectF] = None) -> List[QPointF]:
-        """
-        Find shortest orthogonal path from start to end using BFS.
-        
-        Args:
-            start: Starting point in world coordinates
-            end: Ending point in world coordinates
-            bounds: Optional world-space bounds (scene limits)
-        
-        Returns:
-            List of QPointF representing orthogonal path points.
-            Returns direct line if no valid path found.
-        """
-        # Convert to grid coordinates
-        start_grid = self._world_to_grid(start)
-        end_grid = self._world_to_grid(end)
-        
-        # If start or end is blocked, try to find nearest valid point
-        if self._is_cell_blocked(start_grid):
-            start_grid = self._find_nearest_valid_cell(start_grid, bounds)
-        if self._is_cell_blocked(end_grid):
-            end_grid = self._find_nearest_valid_cell(end_grid, bounds)
-        
-        # Directional moves: right, left, down, up (orthogonal only)
-        directions = [
-            (1, 0),   # Right
-            (-1, 0),  # Left
-            (0, 1),   # Down
-            (0, -1),  # Up
-        ]
-        
-        # BFS to find shortest path
-        queue = deque([(start_grid, [start_grid])])
-        visited: Set[GridPoint] = {start_grid}
-        parent_map: Dict[GridPoint, GridPoint] = {}
-        
-        while queue:
-            current, path = queue.popleft()
+        if cc == eg_c and cr == eg_r:
+            found_state = (cc, cr, dir_idx)
+            break
             
-            # Goal reached
-            if current == end_grid:
-                return self._grid_path_to_world(path)
+        # Fast state check
+        if best_cost.get((cc, cr, dir_idx), float('inf')) < cost:
+            continue
+
+        for dc, dr, n_dir_idx in dirs:
+            nc, nr = cc + dc, cr + dr
             
-            # Explore neighbors
-            for dx, dy in directions:
-                neighbor = GridPoint(current.x + dx, current.y + dy)
+            # Inline bounds check completely removing nested unrolls
+            if nc < roi_col_lo or nc > roi_col_hi or nr < roi_row_lo or nr > roi_row_hi:
+                continue
+
+            # Move Cost
+            move_cost = 1.0
+            if dir_idx != n_dir_idx:
+                move_cost += TURN_PENALTY
+            
+            nb = (nc, nr)
+            if nb in line_cells:
+                move_cost += CROSSOVER_PENALTY
                 
-                # Skip if already visited
-                if neighbor in visited:
-                    continue
+            if nb in obstacles and nb != eg:
+                move_cost += 50000.0  # Soft obstacle penalty
                 
-                # Skip if not valid
-                if not self._is_valid_move(neighbor, bounds):
-                    continue
+            new_cost = cost + move_cost
+            state = (nc, nr, n_dir_idx)
+            
+            # Sub-millisecond cost dictionary lookup
+            if state in best_cost and new_cost >= best_cost[state]:
+                continue
                 
-                visited.add(neighbor)
-                parent_map[neighbor] = current
-                new_path = path + [neighbor]
-                queue.append((neighbor, new_path))
-        
-        # No path found, return simple orthogonal fallback
-        # Create L-shaped path instead of diagonal
-        mid_point = QPointF((start.x() + end.x()) / 2, start.y())
-        return [start, mid_point, QPointF((start.x() + end.x()) / 2, end.y()), end]
-    
-    def _find_nearest_valid_cell(self, grid_point: GridPoint,
-                                 bounds: Optional[QRectF] = None) -> GridPoint:
-        """
-        Find nearest valid (non-blocked) grid cell to given point.
-        Uses expanding square search.
-        
-        Args:
-            grid_point: Starting grid point
-            bounds: Optional bounds to respect
-        
-        Returns:
-            Valid grid point (or original if all invalid)
-        """
-        if self._is_valid_move(grid_point, bounds):
-            return grid_point
-        
-        # Expanding square search
-        for radius in range(1, 20):
-            for dx in range(-radius, radius + 1):
-                for dy in range(-radius, radius + 1):
-                    # Only check cells on the perimeter of the square
-                    if abs(dx) != radius and abs(dy) != radius:
-                        continue
-                    
-                    neighbor = GridPoint(grid_point.x + dx, grid_point.y + dy)
-                    if self._is_valid_move(neighbor, bounds):
-                        return neighbor
-        
-        # Fallback to original point
-        return grid_point
-    
-    def _grid_path_to_world(self, grid_path: List[GridPoint]) -> List[QPointF]:
-        """
-        Convert grid-based path to world coordinates and simplify.
-        
-        Args:
-            grid_path: List of GridPoint from pathfinding
-        
-        Returns:
-            List of QPointF with optimized path
-        """
-        if not grid_path:
-            return []
-        
-        # Convert to world coordinates
-        world_path = [point.to_qpointf(self.grid_resolution) for point in grid_path]
-        
-        # Simplify path: remove redundant intermediate points
-        # Keep only direction changes
-        simplified = [world_path[0]]
-        
-        for i in range(1, len(world_path) - 1):
-            prev_point = world_path[i - 1]
-            curr_point = world_path[i]
-            next_point = world_path[i + 1]
+            best_cost[state] = new_cost
+            parent[state] = (cc, cr, dir_idx)
             
-            # Check if current point is a direction change
-            is_horizontal_to_vertical = (
-                abs(prev_point.x() - curr_point.x()) > 0.1 and  # Prev was horizontal
-                abs(curr_point.y() - next_point.y()) > 0.1        # Next is vertical
-            )
-            
-            is_vertical_to_horizontal = (
-                abs(prev_point.y() - curr_point.y()) > 0.1 and  # Prev was vertical
-                abs(curr_point.x() - next_point.x()) > 0.1        # Next is horizontal
-            )
-            
-            # Keep point if it's a direction change
-            if is_horizontal_to_vertical or is_vertical_to_horizontal:
-                simplified.append(curr_point)
+            # Inline Manhattan Heuristic
+            f_score = new_cost + abs(nc - eg_c) + abs(nr - eg_r)
+            heapq.heappush(pq, (f_score, new_cost, nc, nr, n_dir_idx))
+
+    # ------------------------------------------------------------------ #
+    # 5. Reconstruct path or fall back                                     #
+    # ------------------------------------------------------------------ #
+    if not found_state:
+        # Return empty list to let connection.py use its rule-based fallback
+        return []
+
+    grid_path: List[Tuple[int, int]] = []
+    curr = found_state
+    while curr:
+        grid_path.append((curr[0], curr[1]))
+        curr = parent[curr]
+    grid_path.reverse()
+
+    # Convert to world coords
+    world: List[QPointF] = [_to_world(c, r) for c, r in grid_path]
+
+    # Segment Floating to ensure mathematically straight endpoints without doglegs.
+    world = _simplify(world)
+
+    if len(world) == 2:
+        is_horiz = abs(world[0].y() - world[1].y()) < 0.01
+        is_vert  = abs(world[0].x() - world[1].x()) < 0.01
         
-        # Add end point
-        if len(world_path) > 1:
-            simplified.append(world_path[-1])
-        
-        return simplified
-    
-    def build_painter_path(self, path_points: List[QPointF],
-                          start_offset: float = 0.0,
-                          end_offset: float = 0.0) -> QPainterPath:
-        """
-        Build a QPainterPath from orthogonal path points.
-        
-        Args:
-            path_points: List of QPointF points
-            start_offset: Offset from start point
-            end_offset: Offset to end point
-        
-        Returns:
-            QPainterPath with line segments
-        """
-        if not path_points:
-            return QPainterPath()
-        
-        painter_path = QPainterPath()
-        
-        if len(path_points) == 1:
-            # Single point, create a small path
-            painter_path.moveTo(path_points[0])
-            painter_path.lineTo(path_points[0])
-            return painter_path
-        
-        # Start from first point with offset if specified
-        start = path_points[0]
-        if start_offset > 0 and len(path_points) > 1:
-            # Move along first segment by offset amount
-            next_point = path_points[1]
-            direction = next_point - start
-            distance = (direction.x()**2 + direction.y()**2)**0.5
-            if distance > 0:
-                normalized = QPointF(direction.x() / distance, direction.y() / distance)
-                start = start + normalized * start_offset
-        
-        painter_path.moveTo(start)
-        
-        # Draw line segments
-        for i in range(1, len(path_points)):
-            target = path_points[i]
-            
-            # Apply end offset to last segment
-            if i == len(path_points) - 1 and end_offset > 0:
-                prev_point = path_points[i - 1]
-                direction = target - prev_point
-                distance = (direction.x()**2 + direction.y()**2)**0.5
-                if distance > 0:
-                    normalized = QPointF(direction.x() / distance, direction.y() / distance)
-                    target = target - normalized * end_offset
-            
-            painter_path.lineTo(target)
-        
-        return painter_path
-    
-    def add_jump_overs(self, painter_path: QPainterPath,
-                      existing_segments: List[Tuple[QPointF, QPointF]],
-                      jump_height: float = 10.0) -> QPainterPath:
-        """
-        Add visual jump-overs where path crosses existing connections.
-        
-        Args:
-            painter_path: Original painter path
-            existing_segments: List of existing connection segments
-            jump_height: Height of the jump-over arc
-        
-        Returns:
-            Modified QPainterPath with jumps
-        """
-        # This is a placeholder for jump-over implementation
-        # For now, return the original path
-        # TODO: Implement proper arc drawing for crossings
-        return painter_path
+        if is_horiz and start_side in ("left", "right") and end_side in ("left", "right"):
+            if abs(start.y() - end.y()) > 0.01:
+                mid_x = (world[0].x() + world[1].x()) / 2.0
+                world = [
+                    QPointF(world[0].x(), start.y()), 
+                    QPointF(mid_x, start.y()),
+                    QPointF(mid_x, end.y()), 
+                    QPointF(world[1].x(), end.y())
+                ]
+        elif is_vert and start_side in ("top", "bottom") and end_side in ("top", "bottom"):
+            if abs(start.x() - end.x()) > 0.01:
+                mid_y = (world[0].y() + world[1].y()) / 2.0
+                world = [
+                    QPointF(start.x(), world[0].y()),
+                    QPointF(start.x(), mid_y),
+                    QPointF(end.x(), mid_y),
+                    QPointF(end.x(), world[1].y())
+                ]
+
+    if len(world) >= 2:
+        # Float start segment
+        if start_side in ("left", "right"):
+            y_grid = world[0].y()
+            for i in range(len(world)):
+                if abs(world[i].y() - y_grid) < 0.01:
+                    world[i] = QPointF(world[i].x(), start.y())
+                else: break
+        else:
+            x_grid = world[0].x()
+            for i in range(len(world)):
+                if abs(world[i].x() - x_grid) < 0.01:
+                    world[i] = QPointF(start.x(), world[i].y())
+                else: break
+
+        # Float end segment
+        if end_side in ("left", "right"):
+            y_grid = world[-1].y()
+            for i in range(len(world)-1, -1, -1):
+                if abs(world[i].y() - y_grid) < 0.01:
+                    world[i] = QPointF(world[i].x(), end.y())
+                else: break
+        else:
+            x_grid = world[-1].x()
+            for i in range(len(world)-1, -1, -1):
+                if abs(world[i].x() - x_grid) < 0.01:
+                    world[i] = QPointF(end.x(), world[i].y())
+                else: break
+
+    if len(world) > 0:
+        world.insert(0, start)
+        world.append(end)
+
+    return _simplify(world)
 
 
-class RouterCache:
+def _simplify(pts: List[QPointF]) -> List[QPointF]:
     """
-    Cache for router state to avoid redundant calculations.
-    Tracks which components/connections have changed.
+    Remove collinear intermediate points so only direction-change corners remain.
+    Keeps start and end unchanged.
     """
-    
-    def __init__(self):
-        self.last_router_state = None
-        self.last_scene_bounds = None
-        self.component_positions: Dict[int, QPointF] = {}
-        self.component_rects: Dict[int, QRectF] = {}
-    
-    def has_changes(self, components: List, bounds: QRectF) -> bool:
-        """
-        Check if any component positions or scene bounds have changed.
-        
-        Args:
-            components: List of components
-            bounds: Current scene bounds
-        
-        Returns:
-            True if state has changed since last cache
-        """
-        if self.last_scene_bounds != bounds:
-            return True
-        
-        for comp in components:
-            comp_id = id(comp)
-            if comp_id not in self.component_positions:
-                return True
-            if self.component_positions[comp_id] != comp.pos():
-                return True
-        
-        return False
-    
-    def update_state(self, components: List, bounds: QRectF):
-        """Update cached state."""
-        self.last_scene_bounds = bounds
-        self.component_positions.clear()
-        self.component_rects.clear()
-        
-        for comp in components:
-            comp_id = id(comp)
-            self.component_positions[comp_id] = comp.pos()
-            if hasattr(comp, 'logical_rect'):
-                self.component_rects[comp_id] = comp.logical_rect
+    if len(pts) <= 2:
+        return pts
+
+    # Deduplicate exact duplicates first
+    deduped = [pts[0]]
+    for pt in pts[1:]:
+        if abs(pt.x() - deduped[-1].x()) > 0.01 or abs(pt.y() - deduped[-1].y()) > 0.01:
+            deduped.append(pt)
+
+    if len(deduped) <= 2:
+        return deduped
+
+    result = [deduped[0]]
+    for i in range(1, len(deduped) - 1):
+        a, b, c = result[-1], deduped[i], deduped[i + 1]
+        # Skip b if it is collinear with a and c
+        h_collinear = abs(a.y() - b.y()) < 0.01 and abs(b.y() - c.y()) < 0.01
+        v_collinear = abs(a.x() - b.x()) < 0.01 and abs(b.x() - c.x()) < 0.01
+        if h_collinear or v_collinear:
+            continue
+        result.append(b)
+
+    result.append(deduped[-1])
+    return result

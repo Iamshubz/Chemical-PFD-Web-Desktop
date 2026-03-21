@@ -1,7 +1,7 @@
 from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, QLineF, QSizeF
 from PyQt5.QtGui import QPainterPath, QColor, QPen, QBrush, QPolygonF
 import math
-from src.auto_router import AutoRouter
+import src.auto_router as auto_router
 
 class Connection:
     GRIP_SIDE_TOLERANCE = 8.0
@@ -32,11 +32,10 @@ class Connection:
         self.start_adjust = 0.0 # Moves the start stub (ns)
         self.end_adjust = 0.0 # Moves the end stub (pe)
         
-        # Auto-Router Integration
-        # NOTE: Auto-router temporarily disabled due to BFS pathfinding complexity
-        # Using enhanced rule-based routing with orthogonality enforcement instead
-        self.use_auto_router = False  # Disabled - using rule-based with orthogonal enforcement
-        self.auto_router = AutoRouter(grid_resolution=10)  # Grid size: 10px
+        # Auto-Router: BFS enabled by default
+        self.use_auto_router = True
+        self.is_auto_routing = True
+        self.manual_path = []
 
     def set_end_grip(self, component, grip_index, side):
         self.end_component = component
@@ -102,15 +101,130 @@ class Connection:
     # PUBLIC ENTRY POINTS
     # ------------------------------------------------------------------
 
-    def calculate_path(self, components=None, other_connections=None, use_auto_router=None):
-        """Route this connection.  Always uses the clean orthogonal router."""
+    def update_path(self, components, other_connections, routing_cache=None):
+        """
+        High-level update:
+        1. Calculate Orthogonal Path (points)
+        2. Generate visual path with Jumps (QPainterPath)
+        """
+        self.calculate_path(components, other_connections, routing_cache)
+        self._generate_jump_path(other_connections)
+
+
+    def calculate_path(self, components=None, other_connections=None, routing_cache=None):
+        """Route this connection using BFS auto-router with rule-based fallback."""
         self.path = []
         self.painter_path = QPainterPath()
-        self._route(components or [])
+
+        if self.start_component is None or self.start_grip_index == -1:
+            return
+
+        if not self.is_auto_routing and self.manual_path:
+            sp = QPointF(self.get_start_pos())
+            ep = QPointF(self.get_end_pos())
+            
+            if len(self.manual_path) >= 2:
+                # Snap start
+                self.manual_path[0] = sp
+                side = self._resolve_grip_side(self.start_component, self.start_grip_index, self.start_side)
+                if side in ("left", "right"):
+                    self.manual_path[1].setY(sp.y())
+                else: # top or bottom
+                    self.manual_path[1].setX(sp.x())
+                    
+                # Snap end
+                self.manual_path[-1] = ep
+                # Use explicit end_side if available, falling back to heuristic only if not
+                side_end = self.end_side if self.end_side else self._resolve_target_side(sp, ep)
+                if side_end in ("left", "right"):
+                    self.manual_path[-2].setY(ep.y())
+                else: # top or bottom
+                    self.manual_path[-2].setX(ep.x())
+            
+            self.path = [QPointF(p.x(), p.y()) for p in self.manual_path]
+            return
+
+        comps = components or []
+        conns = other_connections or []
+
+        # --- Gather canvas bounds from parent widget ---
+        canvas_bounds = QRectF(0, 0, 3000, 2000)  # default
+        if self.start_component and self.start_component.parent():
+            parent = self.start_component.parent()
+            if hasattr(parent, 'logical_size'):
+                sz = parent.logical_size
+                canvas_bounds = QRectF(0, 0, sz.width(), sz.height())
+                
+        # Inflate canvas bounds by 100px so stub routes near the edge don't fall out of bounds
+        canvas_bounds = canvas_bounds.adjusted(-100, -100, 100, 100)
+
+        if routing_cache:
+            static_comps = routing_cache.get('static_components', set())
+            static_conns = routing_cache.get('static_connections', set())
+            
+            dyn_comps = [c for c in comps if c not in static_comps and hasattr(c, 'logical_rect')]
+            component_rects = [c.logical_rect for c in dyn_comps]
+            
+            seg_obstacles = []
+            for conn in conns:
+                if conn is self or conn in static_conns or conn.end_component is None:
+                    continue
+                pts = conn.path
+                for i in range(len(pts) - 1):
+                    seg_obstacles.append((pts[i], pts[i + 1]))
+        else:
+            # --- Component obstacle rects (ALL components are obstacles now) ---
+            component_rects = [
+                c.logical_rect for c in comps
+                if hasattr(c, 'logical_rect')
+            ]
+
+            # --- Connection segment obstacles (all other finished connections) ---
+            seg_obstacles = []
+            for conn in conns:
+                if conn is self:
+                    continue
+                if conn.end_component is None:
+                    continue
+                pts = conn.path
+                for i in range(len(pts) - 1):
+                    seg_obstacles.append((pts[i], pts[i + 1]))
+
+        # --- Compute Stub Points ---
+        start_pos = QPointF(self.get_start_pos())
+        end_pos   = QPointF(self.get_end_pos())
+
+        start_side = self._resolve_grip_side(self.start_component, self.start_grip_index, self.start_side)
+        target_side = self._resolve_target_side(start_pos, end_pos)
+
+        stub_len = max(self._STUB, self._STUB + self.start_adjust)
+        end_stub_len = max(self._STUB, self._STUB + self.end_adjust)
+
+        ns = self._stub_point(start_pos, start_side, stub_len)
+        pe = self._stub_point(end_pos, target_side, end_stub_len)
+
+        # --- Run BFS ---
+        bfs_path = auto_router.find_path(
+            ns,
+            pe,
+            start_side,
+            target_side,
+            component_rects,
+            [], # Empty exclude_rects so all components are solid obstacles
+            seg_obstacles,
+            canvas_bounds,
+            routing_cache=routing_cache
+        )
+
+        if len(bfs_path) >= 2:
+            self.path = self._dedup([start_pos] + bfs_path + [end_pos])
+        else:
+            # Fallback to rule-based router
+            self._route(comps)
 
     def enable_auto_router(self, enable: bool = True):
-        """Legacy hook kept for call-site compatibility – always uses clean router."""
-        self.use_auto_router = enable  # value ignored; kept for serialisation
+        """Legacy hook kept for call-site compatibility."""
+        self.use_auto_router = enable
 
     # ------------------------------------------------------------------
     # CLEAN ORTHOGONAL ROUTER
@@ -119,7 +233,8 @@ class Connection:
     # Padding added around every obstacle rect
     _PAD = 14.0
     # Min stub length coming out of / going into a grip
-    _STUB = 20.0
+    # Increased to 24.0 to guarantee it clears the 14px padding cells on a 10px grid.
+    _STUB = 24.0
 
     def _route(self, components):
         """
@@ -399,15 +514,6 @@ class Connection:
         simplified.append(deduped[-1])
         return simplified
 
-    def update_path(self, components, other_connections):
-        """
-        High-level update:
-        1. Calculate Orthogonal Path (points)
-        2. Generate visual path with Jumps (QPainterPath)
-        """
-        self.calculate_path(components, other_connections)
-        self._generate_jump_path(other_connections)
-
     def _generate_jump_path(self, other_connections):
         """
         Converts self.path (points) into self.painter_path (QPainterPath)
@@ -422,6 +528,14 @@ class Connection:
         # radius of the jump
         r = 6.0 
 
+        # Pre-compile index map to turn O(N^2) array searches into O(1) hashmap lookups
+        conn_indices = {}
+        if other_connections:
+            for idx, conn in enumerate(other_connections):
+                conn_indices[conn] = idx
+                
+        my_index = conn_indices.get(self, 999999)
+
         for i in range(len(self.path) - 1):
             p1 = self.path[i]
             p2 = self.path[i+1]
@@ -432,28 +546,20 @@ class Connection:
             # Unit direction
             u = vec / length
 
-
-
             # Identify intersections
-            # We collect (distance_from_p1, intersection_point)
             intersections = []
-            
             current_seg = QLineF(p1, p2)
             
-            for other in other_connections:
+            for other in other_connections or []:
                 if other == self: continue
 
                 # Order-Based Jump Logic:
-                # If I am older (lower index) than the other connection, I go straight (don't detect intersection).
-                if self in other_connections:
-                     my_index = other_connections.index(self)
-                     # other is guaranteed to be in other_connections because we are iterating it
-                     other_index = other_connections.index(other) # No try/except needed hopefully
-                     
-                     if my_index < other_index:
-                         continue
-                # iterate other's segments
-                # We use raw points from other.path to be robust
+                # To prevent BOTH lines jumping at a cross, only the "newer" one jumps.
+                other_index = conn_indices.get(other, 0)
+                
+                if my_index < other_index:
+                    continue
+
                 if not other.path: continue
                 for j in range(len(other.path) - 1):
                     op1 = other.path[j]
@@ -466,7 +572,14 @@ class Connection:
                     
                     if type_ == QLineF.BoundedIntersection:
                         # Check if it's a real crossing, not just touching endpoints
-                        # and not collinear overlaps
+                        # and not collinear overlaps (orthogonal lines only cross if H vs V)
+                        is_h = abs(p1.y() - p2.y()) < 0.1
+                        other_is_h = abs(op1.y() - op2.y()) < 0.1
+                        
+                        if is_h == other_is_h:
+                            # Parallel/Collinear — don't jump
+                            continue
+
                         dist = math.sqrt((intersection_point.x() - p1.x())**2 + (intersection_point.y() - p1.y())**2)
                         
                         # Filter out hits too close to start/end of segment (corners)
@@ -490,25 +603,20 @@ class Connection:
 
             for dist in clean_intersections:
                 # Draw line to jump start
-                # jump start is at dist - r
                 segment_end_dist = dist - r
-                
                 if segment_end_dist > current_dist:
                     dest = p1 + u * segment_end_dist
                     self.painter_path.lineTo(dest)
                 
                 jump_center = p1 + u * dist
-
+                rect = QRectF(jump_center.x() - r, jump_center.y() - r, 2*r, 2*r)
                 
-                rect_top_left = jump_center - QPointF(r, r)
-                rect = QRectF(rect_top_left, QSizeF(2*r, 2*r))
-                
-                # Calculate angle of the line
+                # Angle in degrees for arcTo (0 is 3 o'clock, + CCW)
                 angle = math.degrees(math.atan2(u.y(), u.x()))
-                
+                # For Y-down coord system:
+                # (1,0) -> 0, (-1,0) -> 180, (0,1) -> 90, (0,-1) -> -90
+                # arcTo(rect, startAddr, sweep)
                 self.painter_path.arcTo(rect, -angle + 180, -180) 
-                # Note: Qt angles are counter-clockwise, but Y is flipped.
-                # Visual Check required.
                 
                 current_dist = dist + r
             
@@ -517,35 +625,31 @@ class Connection:
                 self.painter_path.lineTo(p2)
 
 
-    def paint(self, painter, theme="light", zoom=1.0):
+    def paint(self, painter, theme="light", zoom=1.0, layer="all"):
         # Determine visual width based on selection
         visual_width = 4.0 if self.is_selected else 2.5
         
         # Calculate LOGICAL width to maintain constant VISUAL width
         pen_width = visual_width / max(0.1, zoom)
 
-        if self.is_selected:
-            color = QColor("#2563eb")
-            pen = QPen(color, pen_width)
-            brush_color = color
-        else:
-            color = Qt.white if theme == "dark" else Qt.black
-            pen = QPen(color, pen_width)
-            brush_color = color
-
+        pen_color = Qt.white if theme == "dark" else Qt.black
+        brush_color = pen_color # Inherit arrow color
+        
+        pen = QPen(pen_color, 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
         
-        # 1. Draw The Path (with jumps)
-        # Fallback to simple path if painter_path empty
-        if self.painter_path.isEmpty() and self.path:
-             for i in range(len(self.path)-1):
-                 painter.drawLine(self.path[i], self.path[i+1])
-        else:
-             painter.drawPath(self.painter_path)
+        # 1. Draw Path (Line & Jumps)
+        if layer in ("all", "lines"):
+            # Fallback to simple path if painter_path empty
+            if self.painter_path.isEmpty() and self.path:
+                 for i in range(len(self.path)-1):
+                     painter.drawLine(self.path[i], self.path[i+1])
+            else:
+                 painter.drawPath(self.painter_path)
 
         # 2. Draw Arrow at End
-        if len(self.path) >= 2:
+        if layer in ("all", "arrows") and len(self.path) >= 2:
             p_end = self.path[-1]
             p_prev = self.path[-2]
             
