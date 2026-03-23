@@ -559,7 +559,7 @@ class CanvasWidget(QWidget):
             # Override with API/CSV data if available
             legend = legend or d['legend']
             suffix = suffix or d['suffix']
-            label_text = f"{legend}{d['count']:02d}{suffix}"
+            label_text = resources.format_component_label(legend, d['count'], suffix)
 
         config["default_label"] = label_text
 

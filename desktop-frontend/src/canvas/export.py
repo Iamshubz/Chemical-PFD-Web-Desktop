@@ -267,7 +267,11 @@ def load_canvas_from_project(canvas, project_data):
                 "object": d.get("object") or component_data.get("object", "") or name,
                 "legend": d.get("legend") or component_data.get("legend", ""),
                 "suffix": d.get("suffix") or component_data.get("suffix", ""),
-                "default_label": d.get("label", ""),
+                "default_label": resources.normalize_component_label(
+                    d.get("label", ""),
+                    d.get("legend") or component_data.get("legend", ""),
+                    d.get("suffix") or component_data.get("suffix", ""),
+                ),
                 "grips": grips_data,
             }
             
@@ -760,6 +764,12 @@ def load_from_pfd(canvas, filename):
                     "suffix": d.get("suffix", ""),
                     "default_label": d.get("label", "")
                 }
+
+            config["default_label"] = resources.normalize_component_label(
+                config.get("default_label") or d.get("label", ""),
+                config.get("legend", ""),
+                config.get("suffix", ""),
+            )
             
             comp = ComponentWidget(svg_path, canvas, config=config)
             
