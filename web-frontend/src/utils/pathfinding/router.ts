@@ -1,7 +1,7 @@
 // src/utils/pathfinding/router.ts
 import { Point } from "./types";
 import { aStarSpatial } from "./aStar";
-import { applyStandoff } from "./obstacles";
+import { applyStandoff, getPaddedObstacleRects } from "./obstacles";
 import { optimizePath, enforceManhattanShape } from "./optimize";
 import { generateSpatialGraph } from "./spatialGraph";
 
@@ -49,11 +49,13 @@ export function findOrthogonalPath(
     return createFallbackPath(start, end);
   }
 
+  const obstacles = getPaddedObstacleRects(items, 20);
+
   // Optimize and convert path to canvas coordinates
   // optimizePath removes unnecessary collinear intermediate points
-  // enforceManhattanShape collapses to clean L/straight shape
+  // enforceManhattanShape collapses to clean L/straight shape if obstacle safe
   const optimized = optimizePath(result.path);
-  return enforceManhattanShape(optimized);
+  return enforceManhattanShape(optimized, obstacles);
 }
 
 /**

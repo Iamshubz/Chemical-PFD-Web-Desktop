@@ -1,7 +1,7 @@
 // src/utils/pathfinding/spatialGraph.ts
 import { Point, SpatialNode } from "./types";
 import { CanvasItem } from "@/components/Canvas/types";
-import { getPaddedObstacleRects } from "./obstacles";
+import { getPaddedObstacleRects, orthogonalSegmentHitsObstacle } from "./obstacles";
 import { getGripPosition } from "../routing"; // We may need to get grips from here
 
 export function generateSpatialGraph(
@@ -101,11 +101,8 @@ export function generateSpatialGraph(
         if (prevNode) {
           // Check if the segment crosses any obstacle
           let hitsObstacle = false;
-          // To be safe, check the midpoint
-          // Due to lead lines, if start & end are outside, and it's a straight line, it only hits if it totally crosses a rect
-          const midX = (prevNode.x + node.x) / 2;
-          if (isInsideObstacle({ x: midX, y })) {
-             hitsObstacle = true;
+          if (orthogonalSegmentHitsObstacle(prevNode, node, rects)) {
+            hitsObstacle = true;
           }
 
           if (!hitsObstacle) {
@@ -129,9 +126,8 @@ export function generateSpatialGraph(
       if (node) {
         if (prevNode) {
           let hitsObstacle = false;
-          const midY = (prevNode.y + node.y) / 2;
-          if (isInsideObstacle({ x, y: midY })) {
-             hitsObstacle = true;
+          if (orthogonalSegmentHitsObstacle(prevNode, node, rects)) {
+            hitsObstacle = true;
           }
 
           if (!hitsObstacle) {

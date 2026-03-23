@@ -68,6 +68,61 @@ export function segmentHitsObstacle(
 }
 
 /**
+ * Check if an orthogonal line segment intersects with any obstacle
+ * Uses stricter orthogonal check instead of coarse bounding box overlap
+ */
+export function orthogonalSegmentHitsObstacle(
+  p1: Point,
+  p2: Point,
+  obstacles: Rect[]
+): boolean {
+  for (const r of obstacles) {
+    if (Math.abs(p1.x - p2.x) < 1) { // practically vertical
+      const x = p1.x;
+      const minY = Math.min(p1.y, p2.y);
+      const maxY = Math.max(p1.y, p2.y);
+
+      // Strict intersection: x is inside horizontally, and vertical line spans the rect y bounds
+      if (
+        x > r.x &&
+        x < r.x + r.width &&
+        maxY > r.y &&
+        minY < r.y + r.height
+      ) {
+        return true;
+      }
+    } else {
+      // horizontal line
+      const y = p1.y;
+      const minX = Math.min(p1.x, p2.x);
+      const maxX = Math.max(p1.x, p2.x);
+
+      if (
+        y > r.y &&
+        y < r.y + r.height &&
+        maxX > r.x &&
+        minX < r.x + r.width
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Validate an entire path against obstacles
+ */
+export function pathHitsObstacle(path: Point[], obstacles: Rect[]): boolean {
+  for (let i = 0; i < path.length - 1; i++) {
+    if (orthogonalSegmentHitsObstacle(path[i], path[i + 1], obstacles)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Apply standoff distance to a point based on grip side
  */
 export function applyStandoff(

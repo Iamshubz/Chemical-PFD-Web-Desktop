@@ -44,6 +44,7 @@ import {
 } from "@/utils/routing";
 import { moveSegment, findSegmentIndex, snap } from "@/utils/pathfinding/segmentDrag";
 import { optimizePath, enforceManhattanShape } from "@/utils/pathfinding/optimize";
+import { getPaddedObstacleRects, pathHitsObstacle } from "@/utils/pathfinding/obstacles";
 import { useComponents } from "@/context/ComponentContext";
 import ExportModal from "@/components/Canvas/ExportModal";
 // import { exportDiagram, downloadBlob } from "@/utils/exports";
@@ -1984,8 +1985,16 @@ export default function Editor() {
                         y: snap(p.y),
                       }));
 
+                      // Get padded obstacles for drag check
+                      const obstacles = getPaddedObstacleRects(droppedItems, 20);
+
                       // Post-process: re-optimize and enforce clean shape
-                      const clean = enforceManhattanShape(optimizePath(snapped));
+                      const clean = enforceManhattanShape(optimizePath(snapped), obstacles);
+
+                      // Phase 6: Add rejection logic
+                      if (pathHitsObstacle(clean, obstacles)) {
+                        return; // revert by doing nothing
+                      }
 
                       editorStore.updateConnection(projectId, connection.id, {
                         waypoints: clean,
