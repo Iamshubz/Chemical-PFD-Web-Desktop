@@ -78,30 +78,26 @@ class ComponentWidget(QWidget):
     def calculate_svg_rect(self, content_rect):
         """
         Calculate the actual rectangle where SVG will be rendered.
-        Preserves source SVG aspect ratio to avoid component stretching.
+        Updated to preserve aspect ratio instead of stretching.
         """
         default_size = self.renderer.defaultSize()
-        if not default_size or default_size.width() <= 0 or default_size.height() <= 0:
+        svg_w = default_size.width()
+        svg_h = default_size.height()
+        
+        if svg_w <= 0 or svg_h <= 0:
             return QRectF(content_rect)
-
-        src_w = float(default_size.width())
-        src_h = float(default_size.height())
-        src_ratio = src_w / src_h
-
-        target_w = content_rect.width()
-        target_h = content_rect.height()
-        target_ratio = target_w / target_h if target_h > 0 else src_ratio
-
-        if target_ratio > src_ratio:
-            render_h = target_h
-            render_w = render_h * src_ratio
-        else:
-            render_w = target_w
-            render_h = render_w / src_ratio
-
-        x = content_rect.x() + (target_w - render_w) / 2.0
-        y = content_rect.y() + (target_h - render_h) / 2.0
-        return QRectF(x, y, render_w, render_h)
+            
+        scale_w = content_rect.width() / svg_w
+        scale_h = content_rect.height() / svg_h
+        scale = min(scale_w, scale_h)
+        
+        new_w = svg_w * scale
+        new_h = svg_h * scale
+        
+        x = content_rect.x() + (content_rect.width() - new_w) / 2.0
+        y = content_rect.y() + (content_rect.height() - new_h) / 2.0
+        
+        return QRectF(x, y, new_w, new_h)
     
     def map_svg_to_widget_coords(self, svg_x_percent, svg_y_percent, svg_rect):
         """
@@ -361,29 +357,42 @@ class ComponentWidget(QWidget):
     def get_logical_grip_position(self, idx):
         """
         Get grip position in LOGICAL coordinates (unscaled).
-
-        Must match the same SVG render rect logic used by paintEvent,
-        otherwise connection endpoints and visible cyan grips diverge.
+        
+        Crucial: This must match the visual centering logic in calculate_svg_rect
+        so that connections actually touch the SVG image, not just the bounding box.
         """
         grips = self.get_grips()
-
         if 0 <= idx < len(grips):
             grip = grips[idx]
-
-            # Recreate the same geometry used for visual rendering, but in logical space.
-            logical_pad = float(self.PORT_PAD)
-            logical_content = QRectF(
-                logical_pad,
-                logical_pad,
-                max(1.0, self.logical_rect.width()),
-                max(1.0, self.logical_rect.height()),
-            )
-
-            logical_svg_rect = self.calculate_svg_rect(logical_content)
-            mapped = self.map_svg_to_widget_coords(grip["x"], grip["y"], logical_svg_rect)
-
-            # Convert from widget-relative (includes pad) to logical-rect-relative.
-            return QPointF(mapped.x() - logical_pad, mapped.y() - logical_pad)
+            
+            # 1. Start with the logical content area (no labels, no padding)
+            l_w = self.logical_rect.width()
+            l_h = self.logical_rect.height()
+            
+            # 2. Calculate logic aspect ratio centering (matching calculate_svg_rect logic)
+            default_size = self.renderer.defaultSize()
+            svg_w, svg_h = default_size.width(), default_size.height()
+            
+            if svg_w > 0 and svg_h > 0:
+                scale_w = l_w / svg_w
+                scale_h = l_h / svg_h
+                scale = min(scale_w, scale_h)
+                
+                new_w = svg_w * scale
+                new_h = svg_h * scale
+                
+                # Offsets within the logical_rect
+                off_x = (l_w - new_w) / 2.0
+                off_y = (l_h - new_h) / 2.0
+                
+                # 3. Map percentage to the actual SVG area
+                cx = off_x + (grip["x"] / 100.0) * new_w
+                cy = off_y + ((100.0 - grip["y"]) / 100.0) * new_h
+                
+                return QPointF(cx, cy)
+            
+            # Fallback to simple box mapping if SVG invalid
+            return QPointF((grip["x"]/100.0)*l_w, ((100.0-grip["y"])/100.0)*l_h)
 
         return QPointF(0, 0)
 
@@ -407,12 +416,15 @@ class ComponentWidget(QWidget):
                     return
 
             # SELECTION HANDLING
-            ctrl = bool(event.modifiers() & Qt.ControlModifier)
-            if hasattr(self.parent(), "handle_selection"):
-                self.parent().handle_selection(self, ctrl)
-            else:
-                self.is_selected = True
-                self.update()
+            # Deselect all other components - only one can be selected at a time
+            if self.parent() and hasattr(self.parent(), "components"):
+                for comp in self.parent().components:
+                    if comp != self:
+                        comp.set_selected(False)
+            
+            # Select this component
+            self.is_selected = True
+            self.update()
 
             if self.parent():
                 self.parent().setFocus()
@@ -423,8 +435,12 @@ class ComponentWidget(QWidget):
             # Record start positions for Undo
             if self.parent() and hasattr(self.parent(), "components"):
                 self.drag_start_positions = {
-                    c: c.pos() for c in self.parent().components if c.is_selected
+                    c: QPointF(c.logical_rect.topLeft()) for c in self.parent().components if c.is_selected
                 }
+                
+                moved_comps = list(self.drag_start_positions.keys())
+                if hasattr(self.parent(), "build_routing_cache"):
+                    self.parent().build_routing_cache(moved_components=moved_comps)
 
             event.accept()
         else:
@@ -504,9 +520,17 @@ class ComponentWidget(QWidget):
                 # Recalculate paths for connections attached to moved components
                 if hasattr(parent, "connections"):
                     moved = {c for c in parent.components if c.is_selected}
+                    routing_cache = getattr(parent, "routing_cache", None)
+                    moved_conns = []
                     for conn in parent.connections:
                         if conn.start_component in moved or conn.end_component in moved:
-                            conn.update_path(parent.components, parent.connections)
+                            conn.update_path(parent.components, parent.connections, routing_cache=routing_cache)
+                            moved_conns.append(conn)
+                    
+                    # Update jumps ONLY for the connections that just moved to eliminate drag lag.
+                    # Full cross-canvas intersection sweep is deferred until mouseRelease.
+                    for conn in moved_conns:
+                        conn._generate_jump_path(parent.connections)
                         
                 # Force full repaint — prevents stale connection artefacts
                 parent.repaint()
@@ -544,16 +568,71 @@ class ComponentWidget(QWidget):
             stack = self.parent().undo_stack
             moved_items = []
             
-            for comp, start_pos in self.drag_start_positions.items():
-                if comp.pos() != start_pos:
-                    moved_items.append((comp, start_pos, comp.pos()))
+            parent = self.parent()
+            has_collision = False
             
-            if moved_items:
-                stack.beginMacro("Move Components")
-                for comp, start, end in moved_items:
-                    cmd = MoveCommand(comp, start, end)
-                    stack.push(cmd)
-                stack.endMacro()
+            # Grab cache for potential snap-back
+            routing_cache = getattr(parent, "routing_cache", None)
+
+            # 1. COLLISION DETECTION
+            if parent and hasattr(parent, "components"):
+                for comp, start_pos in self.drag_start_positions.items():
+                    if comp.logical_rect.topLeft() == start_pos:
+                        continue 
+                    for other in parent.components:
+                        if other not in self.drag_start_positions: 
+                            # Enforce a 35px minimum distance between components.
+                            # Connection "stubs" rigidly extend 20px out, so if components are closer
+                            # than 20px, the lines will pierce them before A* routing even begins.
+                            if comp.logical_rect.adjusted(-35, -35, 35, 35).intersects(other.logical_rect):
+                                has_collision = True
+                                break
+                    if has_collision:
+                        break
+            
+            # 2. REVERT IF COLLISION
+            if has_collision:
+                for comp, start_pos in self.drag_start_positions.items():
+                    z = parent.zoom_level if hasattr(parent, "zoom_level") else 1.0
+                    comp.logical_rect.moveTo(start_pos.x(), start_pos.y())
+                    comp.update_visuals(z)
+                if parent:
+                    if hasattr(parent, "connections"):
+                        moved = set(self.drag_start_positions.keys())
+                        for conn in parent.connections:
+                            if conn.start_component in moved or conn.end_component in moved:
+                                conn.update_path(parent.components, parent.connections, routing_cache=routing_cache)
+                    parent.repaint()
+                    
+                if parent and hasattr(parent, "clear_routing_cache"):
+                    parent.clear_routing_cache()
+                    
+                if parent and hasattr(parent, "connections"):
+                    for conn in parent.connections:
+                        conn._generate_jump_path(parent.connections)
+                
+                self.drag_start_positions.clear()
+                return # Skip pushing to undo stack
+            
+            # 3. IF NO COLLISION, COMMIT MOVE
+            else:
+                for comp, start_pos in self.drag_start_positions.items():
+                    if comp.logical_rect.topLeft() != start_pos:
+                        moved_items.append((comp, start_pos, QPointF(comp.logical_rect.topLeft())))
+                
+                if moved_items:
+                    stack.beginMacro("Move Components")
+                    for comp, start, end in moved_items:
+                        cmd = MoveCommand(comp, start, end)
+                        stack.push(cmd)
+                    stack.endMacro()
+            
+            if parent and hasattr(parent, "clear_routing_cache"):
+                parent.clear_routing_cache()
+                
+            if parent and hasattr(parent, "connections"):
+                for conn in parent.connections:
+                    conn._generate_jump_path(parent.connections)
             
             self.drag_start_positions = {}
 

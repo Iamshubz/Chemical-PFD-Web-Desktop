@@ -2,7 +2,7 @@ import os
 from PyQt5 import QtWidgets
 from PyQt5.QtGui import QColor, QBrush, QKeySequence
 from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QShortcut, QMdiSubWindow, QSplitter
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 
 from src.canvas.widget import CanvasWidget
 from src.component_library import ComponentLibrary
@@ -258,6 +258,9 @@ class CanvasSubWindow(QMdiSubWindow):
             event.accept()
 
 class CanvasScreen(QMainWindow):
+    # Signal emitted when a project is successfully saved
+    project_saved = pyqtSignal()
+    
     def closeEvent(self, event):
         """Handle application close by attempting to close all tabs."""
         self.mdi_area.closeAllSubWindows()
@@ -504,10 +507,17 @@ class CanvasScreen(QMainWindow):
             return
 
         canvas = active_sub.get_canvas()
+        
+        # Check if there are unsaved changes
+        if not canvas.is_modified:
+            # No changes, just go back
+            self._close_current_project()
+            return
+            
         reply = QtWidgets.QMessageBox.question(
             self,
-            "Back to Home",
-            "Do you want to save the current file or discard it?",
+            "Unsaved Changes",
+            "Do you want to save changes before going back home?",
             QtWidgets.QMessageBox.Save | QtWidgets.QMessageBox.Discard | QtWidgets.QMessageBox.Cancel,
             QtWidgets.QMessageBox.Save,
         )
@@ -516,18 +526,10 @@ class CanvasScreen(QMainWindow):
             return
 
         if reply == QtWidgets.QMessageBox.Save:
-            saved = self.on_save_as_file()
-            if not saved:
-                return
-            if hasattr(canvas, "undo_stack"):
-                canvas.undo_stack.setClean()
-            canvas.is_modified = False
+            # Save to backend
+            self.on_save_file()
 
-        if reply == QtWidgets.QMessageBox.Discard:
-            if getattr(canvas, "is_new_project", False) and getattr(canvas, "project_id", None):
-                from src.api_client import delete_project
-                delete_project(canvas.project_id)
-
+        # If Discard or after Save, close the project
         self._close_current_project()
 
     def _close_current_project(self):
@@ -615,13 +617,7 @@ class CanvasScreen(QMainWindow):
             
         canvas = active_sub.get_canvas()
         
-        # Check if this is the first time saving the project
-        if getattr(canvas, 'is_new_project', False):
-            success = self.on_save_as_file()
-            if not success:
-                return
-        
-        # Check if canvas has project ID
+        # Check if canvas has project ID (should always have one after new project)
         if not hasattr(canvas, 'project_id') or not canvas.project_id:
             QtWidgets.QMessageBox.warning(
                 self,
@@ -639,14 +635,17 @@ class CanvasScreen(QMainWindow):
                 # Mark as saved
                 canvas.undo_stack.setClean()
 
-                # Update flag on canvas ---
+                # Update flag on canvas
                 canvas.is_new_project = False
 
                 QtWidgets.QMessageBox.information(
                     self, 
                     "Success", 
-                    f"Project '{canvas.project_name}' saved successfully."
+                    f"Project '{canvas.project_name}' saved successfully to your account."
                 )
+                
+                # Emit signal after a short delay so backend has time to process
+                QTimer.singleShot(500, self.project_saved.emit)
             else:
                 QtWidgets.QMessageBox.critical(
                     self,
@@ -662,6 +661,7 @@ class CanvasScreen(QMainWindow):
             )
 
     def on_save_as_file(self):
+        """Save project to local file (.pfd, .pdf, or .jpg)."""
         active_sub = self.mdi_area.currentSubWindow()
         if not active_sub or not isinstance(active_sub, CanvasSubWindow):
              QtWidgets.QMessageBox.information(self, "Information", "No file to save.")
@@ -670,7 +670,7 @@ class CanvasScreen(QMainWindow):
         canvas = active_sub.get_canvas()
         options = QtWidgets.QFileDialog.Options()
         filename, filter_type = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save Project As", "", 
+            self, "Save Project to Local Folder", "", 
             "Process Flow Diagram (*.pfd);;PDF Files (*.pdf);;JPEG Files (*.jpg)", 
             options=options
         )
@@ -683,14 +683,14 @@ class CanvasScreen(QMainWindow):
                 if not filename.lower().endswith(".pdf"):
                     filename += ".pdf"
                 canvas.export_to_pdf(filename)
-                QtWidgets.QMessageBox.information(self, "Success", f"Exported to {filename}")
+                QtWidgets.QMessageBox.information(self, "Success", f"Saved to {filename}")
                 return True
                 
             elif filter_type.startswith("JPEG") or filename.lower().endswith(".jpg"):
                 if not filename.lower().endswith(".jpg"):
                     filename += ".jpg"
                 canvas.export_to_image(filename)
-                QtWidgets.QMessageBox.information(self, "Success", f"Exported to {filename}")
+                QtWidgets.QMessageBox.information(self, "Success", f"Saved to {filename}")
                 return True
 
             else:
@@ -698,8 +698,7 @@ class CanvasScreen(QMainWindow):
                     filename += ".pfd"
                 from src.canvas.export import save_to_pfd
                 save_to_pfd(canvas, filename)
-                active_sub.setWindowTitle(f"Canvas - {os.path.basename(filename)}")
-                QtWidgets.QMessageBox.information(self, "Success", f"Project saved to {filename}")
+                QtWidgets.QMessageBox.information(self, "Success", f"Project saved locally to {filename}")
                 return True
 
         except Exception as e:

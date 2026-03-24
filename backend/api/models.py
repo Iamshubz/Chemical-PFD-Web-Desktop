@@ -20,7 +20,7 @@ class Component(models.Model):
     svg = models.FileField(upload_to='components/', null=True, blank=True)
     png = models.ImageField(upload_to='components/', null=True, blank=True)
     grips = models.JSONField(default=list, blank=True)
-    created_by = models.ForeignKey('auth.User', on_delete=models.CASCADE, null=True, blank=True)
+    created_by = models.ForeignKey('auth.User', on_delete=models.CASCADE, null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     updated_at = models.DateTimeField(auto_now=True)
 

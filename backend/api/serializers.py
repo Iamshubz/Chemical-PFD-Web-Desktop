@@ -29,47 +29,27 @@ class ProjectSerializer(serializers.ModelSerializer):
 
 
 class ComponentSerializer(serializers.ModelSerializer):
-    svg_url = serializers.SerializerMethodField()
-    png_url = serializers.SerializerMethodField()
-    
+    svg_url = serializers.FileField(source='svg', read_only=True)
+    png_url = serializers.FileField(source='png', read_only=True)
+
     class Meta:
         model = Component
-        fields = '__all__'
-    
-    def to_internal_value(self, data):
-        # Convert QueryDict to standard dict to handle JSON parsing correctly
-        if hasattr(data, 'dict'):
-            data = data.dict()
-        elif hasattr(data, 'copy'):
-            data = data.copy()
+        fields = [
+            'id',
+            's_no',
+            'name',
+            'legend',
+            'parent',
+            'suffix',
+            'object',
+            'svg',
+            'png',
+            'svg_url',
+            'png_url',
+            'grips',
+            'created_by',
+        ]
 
-        grips = data.get("grips")
-
-        if isinstance(grips, str):
-            try:
-                data["grips"] = json.loads(grips)
-            except json.JSONDecodeError:
-                raise serializers.ValidationError({
-                    "grips": "Invalid JSON format"
-                })
-
-        return super().to_internal_value(data)
-    
-    def get_svg_url(self, obj):
-        request = self.context.get('request')
-        if obj.svg and hasattr(obj.svg, 'url'):
-            if request:
-                return request.build_absolute_uri(obj.svg.url)
-            return obj.svg.url
-        return None
-    
-    def get_png_url(self, obj):
-        request = self.context.get('request')
-        if obj.png and hasattr(obj.png, 'url'):
-            if request:
-                return request.build_absolute_uri(obj.png.url)
-            return obj.png.url
-        return None
 class CanvasStateSerializer(serializers.ModelSerializer):
     # Component fields (flattened)
     component_id = serializers.IntegerField(source="component.id", read_only=True)

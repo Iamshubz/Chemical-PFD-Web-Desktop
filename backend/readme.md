@@ -14,14 +14,11 @@ Backend API for a **Chemical Process Flow Diagram (PFD)** system built with **Dj
 - [Django API Project](#django-api-project)
   - [Table of Contents](#table-of-contents)
   - [Features](#features)
+  - [Prerequisites](#prerequisites)
+  - [Environment Configuration](#environment-configuration)
   - [Setup](#setup)
-    - [1. Clone the repository](#1-clone-the-repository)
-    - [2. Create a virtual environment](#2-create-a-virtual-environment)
-    - [3. Activate the virtual environment](#3-activate-the-virtual-environment)
-    - [4. Install dependencies](#4-install-dependencies)
-    - [5. Run migrations](#5-run-migrations)
-    - [6. Create a superuser (required for admin)](#6-create-a-superuser-required-for-admin)
   - [Running the Project](#running-the-project)
+  - [Running Tests](#running-tests)
   - [Authentication](#authentication)
   - [API Documentation](#api-documentation)
     - [1. Hello World](#1-hello-world)
@@ -51,7 +48,76 @@ Backend API for a **Chemical Process Flow Diagram (PFD)** system built with **Dj
 
 ---
 
+## Prerequisites
+
+Make sure you have the following installed before getting started:
+
+- [Docker](https://www.docker.com/get-started) and [Docker Compose](https://docs.docker.com/compose/install/) — required for the recommended setup
+  > 📥 **Download Docker Desktop here: [https://www.docker.com/products/docker-desktop/](https://www.docker.com/products/docker-desktop/)**  
+  > Docker Desktop includes both Docker and Docker Compose. Install this **before** proceeding with the PostgreSQL setup.
+- [Python 3.11+](https://www.python.org/downloads/) — only required if running without Docker
+- [Git](https://git-scm.com/)
+
+---
+
+## Environment Configuration
+
+The project uses a `.env` file to manage environment variables such as database credentials, secret keys, and debug settings.
+
+### 1. Create the `.env` file
+
+Place the `.env` file in the **root of the backend project** (same directory as `manage.py` and `docker-compose.yml`):
+
+```
+backend/
+├── manage.py
+├── docker-compose.yml
+├── .env               <-- your .env file goes here
+├── requirements.txt
+└── ...
+```
+
+```bash
+cp .env.example .env
+```
+
+### 2. Fill in the values
+
+Open `.env` and update the values to match your environment:
+
+```env
+DEBUG=True
+
+POSTGRES_DB=your_local_db
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=yourpassword
+SECRET_KEY=your-secret-key-here
+
+# Superuser credentials (auto-created on first run)
+SU_EMAIL=admin@example.com
+SU_PASSWORD=StrongPassword123
+SU_USERNAME=admin
+```
+
+| Variable | Description |
+|---|---|
+| `DEBUG` | Set to `True` for development, `False` for production |
+| `POSTGRES_DB` | Name of the PostgreSQL database |
+| `POSTGRES_USER` | PostgreSQL username |
+| `POSTGRES_PASSWORD` | PostgreSQL password |
+| `SECRET_KEY` | Django secret key — keep this private and unique |
+| `SU_EMAIL` | Email for the auto-created Django superuser |
+| `SU_PASSWORD` | Password for the auto-created Django superuser |
+| `SU_USERNAME` | Username for the auto-created Django superuser |
+
+> ⚠️ **Never commit your `.env` file to version control.** It is already included in `.gitignore`.  
+> ⚠️ **Change the default `SECRET_KEY`** before deploying to production.
+
+---
+
 ## Setup
+
+Docker is used **only to run the PostgreSQL database**. Django runs locally on your machine.
 
 ### 1. Clone the repository
 
@@ -60,13 +126,41 @@ git clone <your-repo-url>
 cd <project-folder>
 ```
 
-### 2. Create a virtual environment
+### 2. Configure your `.env` file
+
+Follow the [Environment Configuration](#environment-configuration) steps above.
+
+### 3. Start the PostgreSQL container
+
+> ⚠️ **Make sure Docker Desktop is running** before executing this command.
+
+```bash
+docker-compose up -d
+```
+
+This pulls and starts a **PostgreSQL** container in the background. Django is **not** containerized — it runs locally.
+
+### Stopping the database container
+
+```bash
+docker-compose down
+```
+
+To also remove the database volume (wipes all data):
+
+```bash
+docker-compose down -v
+```
+
+---
+
+### 4. Create a virtual environment
 
 ```bash
 python -m venv env
 ```
 
-### 3. Activate the virtual environment
+### 5. Activate the virtual environment
 
 **Windows**
 
@@ -80,19 +174,19 @@ env\Scripts\activate
 source env/bin/activate
 ```
 
-### 4. Install dependencies
+### 6. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 5. Run migrations
+### 7. Run migrations
 
 ```bash
 python manage.py migrate
 ```
 
-### 6. Create a superuser (required for admin)
+### 8. Create a superuser (required for admin)
 
 ```bash
 python manage.py createsuperuser
@@ -110,6 +204,45 @@ Access the API at:
 
 ```
 http://127.0.0.1:8000/api/
+```
+
+---
+
+## Running Tests
+
+Make sure your virtual environment is activated and the PostgreSQL container is running before executing the tests.
+
+### 1. Activate the virtual environment
+
+**Windows**
+
+```bash
+env\Scripts\activate
+```
+
+**Linux / macOS**
+
+```bash
+source env/bin/activate
+```
+
+### 2. Run the test suite
+
+```bash
+python manage.py test tests.tests --verbosity=2
+```
+
+The `--verbosity=2` flag prints the pass/fail status of each individual test as it runs:
+
+```
+test_create_component (tests.tests.ComponentListViewTests) ... ok
+test_create_requires_auth (tests.tests.ComponentListViewTests) ... ok
+test_login_returns_tokens (tests.tests.LoginViewTests) ... ok
+test_register_success (tests.tests.RegisterViewTests) ... ok
+...
+----------------------------------------------------------------------
+Ran 42 tests in 9.957s
+OK
 ```
 
 ---
@@ -420,14 +553,8 @@ Authorization: Bearer <access_token>
                 "targetItemId": 2,
                 "targetGripIndex": 1,
                 "waypoints": [
-                    {
-                        "x": 150,
-                        "y": 150
-                    },
-                    {
-                        "x": 250,
-                        "y": 150
-                    }
+                    {"x": 150, "y": 150},
+                    {"x": 250, "y": 150}
                 ]
             }
         ],
@@ -452,35 +579,21 @@ Authorization: Bearer <access_token>
     "items": [
       {
         "id": 1,
-        "component": {
-          "id": 101,
-          "name": "Pump"
-        },
+        "component": {"id": 101, "name": "Pump"},
         "label": "Pump #1",
-        "x": 100,
-        "y": 150,
-        "width": 50,
-        "height": 50,
-        "rotation": 0,
-        "scaleX": 1,
-        "scaleY": 1,
+        "x": 100, "y": 150,
+        "width": 50, "height": 50,
+        "rotation": 0, "scaleX": 1, "scaleY": 1,
         "sequence": 1,
         "connections": []
       },
       {
         "id": 2,
-        "component": {
-          "id": 102,
-          "name": "Valve"
-        },
+        "component": {"id": 102, "name": "Valve"},
         "label": "Valve #1",
-        "x": 300,
-        "y": 150,
-        "width": 50,
-        "height": 50,
-        "rotation": 0,
-        "scaleX": 1,
-        "scaleY": 1,
+        "x": 300, "y": 150,
+        "width": 50, "height": 50,
+        "rotation": 0, "scaleX": 1, "scaleY": 1,
         "sequence": 2,
         "connections": []
       }
@@ -501,7 +614,6 @@ Authorization: Bearer <access_token>
     "sequence_counter": 3
   }
 }
-
 ```
 
 **PUT Response Example:**
@@ -523,22 +635,16 @@ Authorization: Bearer <access_token>
                 "project": 1,
                 "component_id": 101,
                 "label": "Pump #1",
-                "x": 100.0,
-                "y": 150.0,
-                "width": 50.0,
-                "height": 50.0,
-                "rotation": 0.0,
-                "scaleX": 1.0,
-                "scaleY": 1.0,
+                "x": 100.0, "y": 150.0,
+                "width": 50.0, "height": 50.0,
+                "rotation": 0.0, "scaleX": 1.0, "scaleY": 1.0,
                 "sequence": 1,
                 "s_no": "615",
                 "parent": "Instrumentation Symbol",
                 "name": "Gas Filter",
-                "svg": null,
-                "png": null,
+                "svg": null, "png": null,
                 "object": "GasFilter",
-                "legend": "",
-                "suffix": "",
+                "legend": "", "suffix": "",
                 "grips": []
             },
             {
@@ -546,22 +652,16 @@ Authorization: Bearer <access_token>
                 "project": 1,
                 "component_id": 102,
                 "label": "Valve #1",
-                "x": 300.0,
-                "y": 150.0,
-                "width": 50.0,
-                "height": 50.0,
-                "rotation": 0.0,
-                "scaleX": 1.0,
-                "scaleY": 1.0,
+                "x": 300.0, "y": 150.0,
+                "width": 50.0, "height": 50.0,
+                "rotation": 0.0, "scaleX": 1.0, "scaleY": 1.0,
                 "sequence": 2,
                 "s_no": "616",
                 "parent": "Instrumentation Symbol",
                 "name": "Interlock",
-                "svg": null,
-                "png": null,
+                "svg": null, "png": null,
                 "object": "Interlock",
-                "legend": "",
-                "suffix": "",
+                "legend": "", "suffix": "",
                 "grips": []
             }
         ],
@@ -573,14 +673,8 @@ Authorization: Bearer <access_token>
                 "targetItemId": 2,
                 "targetGripIndex": 1,
                 "waypoints": [
-                    {
-                        "x": 150,
-                        "y": 150
-                    },
-                    {
-                        "x": 250,
-                        "y": 150
-                    }
+                    {"x": 150, "y": 150},
+                    {"x": 250, "y": 150}
                 ]
             }
         ],

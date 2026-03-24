@@ -261,8 +261,7 @@ export default function Dashboard() {
             <Button
               isIconOnly
               className="text-foreground hover:text-primary"
-              variant="light"
-            >
+              variant="light">
               <CiFilter size={22} />
             </Button>
           </DropdownTrigger>
@@ -271,22 +270,19 @@ export default function Dashboard() {
             <DropdownItem
               key="sort-header"
               isReadOnly
-              className="text-xs font-semibold opacity-70"
-            >
+              className="text-xs font-semibold opacity-70">
               Sort By
             </DropdownItem>
             <DropdownItem
               key="recent"
               className={sortBy === "recent" ? "bg-primary/10" : ""}
-              onPress={() => setSortBy("recent")}
-            >
+              onPress={() => setSortBy("recent")}>
               Most Recent
             </DropdownItem>
             <DropdownItem
               key="alpha"
               className={sortBy === "alpha" ? "bg-primary/10" : ""}
-              onPress={() => setSortBy("alpha")}
-            >
+              onPress={() => setSortBy("alpha")}>
               Alphabetical
             </DropdownItem>
 
@@ -296,36 +292,31 @@ export default function Dashboard() {
             <DropdownItem
               key="size-header"
               isReadOnly
-              className="text-xs font-semibold opacity-70"
-            >
+              className="text-xs font-semibold opacity-70">
               Size Filter
             </DropdownItem>
             <DropdownItem
               key="all"
               className={sizeFilter === "all" ? "bg-primary/10" : ""}
-              onPress={() => setSizeFilter("all")}
-            >
+              onPress={() => setSizeFilter("all")}>
               All Projects
             </DropdownItem>
             <DropdownItem
               key="small"
               className={sizeFilter === "small" ? "bg-primary/10" : ""}
-              onPress={() => setSizeFilter("small")}
-            >
+              onPress={() => setSizeFilter("small")}>
               Small (&lt; 5 items)
             </DropdownItem>
             <DropdownItem
               key="medium"
               className={sizeFilter === "medium" ? "bg-primary/10" : ""}
-              onPress={() => setSizeFilter("medium")}
-            >
+              onPress={() => setSizeFilter("medium")}>
               Medium (5-14 items)
             </DropdownItem>
             <DropdownItem
               key="large"
               className={sizeFilter === "large" ? "bg-primary/10" : ""}
-              onPress={() => setSizeFilter("large")}
-            >
+              onPress={() => setSizeFilter("large")}>
               Large (15+ items)
             </DropdownItem>
           </DropdownMenu>
@@ -352,8 +343,7 @@ export default function Dashboard() {
             <Button
               color="primary"
               size="lg"
-              onPress={() => setShowNewProjectModal(true)}
-            >
+              onPress={() => setShowNewProjectModal(true)}>
               + Create New Project
             </Button>
           )}
@@ -363,10 +353,8 @@ export default function Dashboard() {
           {filteredProjects.map((proj) => (
             <Card
               key={proj.id}
-              isPressable
               className="p-2 hover:scale-[1.01] transition-transform cursor-pointer"
-              onPress={() => navigate(`/editor/${proj.id}`)}
-            >
+              onClick={() => navigate(`/editor/${proj.id}`)}>
               <CardHeader className="flex gap-3">
                 <div className="bg-primary/10 p-2 rounded-lg text-2xl">📄</div>
                 <div className="flex flex-col flex-grow">
@@ -377,15 +365,13 @@ export default function Dashboard() {
                 </div>
                 <div
                   className="flex gap-1"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                  onClick={(e) => e.stopPropagation()}>
                   <Button
                     isIconOnly
                     className="text-gray-600 hover:text-blue-600 hover:bg-blue-100/50 dark:hover:bg-blue-900/30"
                     size="sm"
                     variant="light"
-                    onPress={() => handleEditProject(proj)}
-                  >
+                    onPress={() => handleEditProject(proj)}>
                     <MdEdit size={18} />
                   </Button>
                   <Button
@@ -393,8 +379,7 @@ export default function Dashboard() {
                     className="text-gray-600 hover:text-red-600 hover:bg-red-100/50 dark:hover:bg-red-900/30"
                     size="sm"
                     variant="light"
-                    onPress={() => handleDeleteProject(proj)}
-                  >
+                    onPress={() => handleDeleteProject(proj)}>
                     <MdDelete size={18} />
                   </Button>
                 </div>
@@ -413,8 +398,7 @@ export default function Dashboard() {
                       : "warning"
                   }
                   size="sm"
-                  variant="flat"
-                >
+                  variant="flat">
                   {getProjectStatus(proj)}
                 </Chip>
                 <span className="text-primary text-sm font-medium">
@@ -437,8 +421,7 @@ export default function Dashboard() {
       <Modal
         isOpen={!!editingProject}
         placement="center"
-        onClose={() => setEditingProject(null)}
-      >
+        onClose={() => setEditingProject(null)}>
         <ModalContent>
           <ModalHeader className="flex flex-col gap-1">
             Edit Project
@@ -465,8 +448,7 @@ export default function Dashboard() {
             <Button
               color="primary"
               isDisabled={!editName.trim()}
-              onPress={handleSaveEdit}
-            >
+              onPress={handleSaveEdit}>
               Save Changes
             </Button>
           </ModalFooter>
@@ -477,8 +459,7 @@ export default function Dashboard() {
       <Modal
         isOpen={!!deletingProject}
         placement="center"
-        onClose={() => setDeletingProject(null)}
-      >
+        onClose={() => setDeletingProject(null)}>
         <ModalContent>
           <ModalHeader className="flex flex-col gap-1">
             Delete Project

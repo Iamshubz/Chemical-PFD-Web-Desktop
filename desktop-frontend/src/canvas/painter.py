@@ -6,17 +6,27 @@ def draw_grid(painter, width, height, theme="light"):
     painter.setPen(dot_color)
 
     grid_spacing = 30
+    
+    # Pre-allocate points array to draw everything in a single C++ batched call
+    from PyQt5.QtGui import QPolygon
+    from PyQt5.QtCore import QPoint
+    
+    points = QPolygon()
     for x in range(0, width, grid_spacing):
         for y in range(0, height, grid_spacing):
-            painter.drawPoint(x, y)
+            points.append(QPoint(x, y))
+            
+    painter.drawPoints(points)
 
-def draw_connections(painter, connections, components, theme="light", zoom=1.0):
-    # Draw all finished connections
-    # Note: conn.update_path() is NOT called here — it is called only when
-    # endpoints actually change (drag, drop, connect), not on every repaint.
+def draw_connections(painter, connections, components, theme="light", zoom=1.0, layer="all"):
+    """
+    Render connections in multiple passes if needed.
+    layer="lines": only lines (draw behind components)
+    layer="arrows": only arrowheads (draw on top)
+    layer="all": everything (traditional)
+    """
     for conn in connections:
-        # Render Connection (Line + Arrow + Jumps)
-        conn.paint(painter, theme=theme, zoom=zoom)
+        conn.paint(painter, theme=theme, zoom=zoom, layer=layer)
 
         # Draw Edit Handles if selected
         if conn.is_selected:
@@ -25,15 +35,19 @@ def draw_connections(painter, connections, components, theme="light", zoom=1.0):
             for pt in conn.path:
                 painter.drawEllipse(pt, 4, 4)
 
-def draw_active_connection(painter, active_connection, theme="light"):
+def draw_active_connection(painter, active_connection, theme="light", layer="all"):
     if active_connection:
-        color = Qt.white if theme == "dark" else Qt.black
-        painter.setPen(QPen(color, 2, Qt.DashLine))
-        painter.setBrush(Qt.NoBrush)
+        if layer in ("all", "lines"):
+            color = Qt.white if theme == "dark" else Qt.black
+            painter.setPen(QPen(color, 2, Qt.DashLine))
+            painter.setBrush(Qt.NoBrush)
+            
+            if not active_connection.painter_path.isEmpty():
+                painter.drawPath(active_connection.painter_path)
+            else:
+                path = active_connection.path
+                for i in range(len(path) - 1):
+                    painter.drawLine(path[i], path[i + 1])
         
-        if not active_connection.painter_path.isEmpty():
-            painter.drawPath(active_connection.painter_path)
-        else:
-            path = active_connection.path
-            for i in range(len(path) - 1):
-                painter.drawLine(path[i], path[i + 1])
+        # ACTIVE connection usually doesn't show an arrow while dragging? 
+        # But if it does, we'd handle it here for layer="arrows"
