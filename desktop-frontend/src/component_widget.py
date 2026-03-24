@@ -416,12 +416,15 @@ class ComponentWidget(QWidget):
                     return
 
             # SELECTION HANDLING
-            ctrl = bool(event.modifiers() & Qt.ControlModifier)
-            if hasattr(self.parent(), "handle_selection"):
-                self.parent().handle_selection(self, ctrl)
-            else:
-                self.is_selected = True
-                self.update()
+            # Deselect all other components - only one can be selected at a time
+            if self.parent() and hasattr(self.parent(), "components"):
+                for comp in self.parent().components:
+                    if comp != self:
+                        comp.set_selected(False)
+            
+            # Select this component
+            self.is_selected = True
+            self.update()
 
             if self.parent():
                 self.parent().setFocus()
