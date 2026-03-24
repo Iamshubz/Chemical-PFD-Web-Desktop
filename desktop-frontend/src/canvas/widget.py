@@ -576,12 +576,20 @@ class CanvasWidget(QWidget):
         suffix = component_data.get('suffix', '')
 
         # Auto-initialize label data for new components (Web-Desktop Sync)
-        if key not in self.label_data and legend:
-            self.label_data[key] = {
-                "legend": legend,
-                "suffix": suffix,
-                "count": 0
-            }
+        if key not in self.label_data:
+            # Local Fallback for specific components with empty API legends
+            if not legend:
+                if key == "inflowline":
+                    legend = "IN"
+                elif key == "outflowline":
+                    legend = "OUT"
+            
+            if legend:
+                self.label_data[key] = {
+                    "legend": legend,
+                    "suffix": suffix,
+                    "count": 0
+                }
 
         if key in self.label_data:
             d = self.label_data[key]
