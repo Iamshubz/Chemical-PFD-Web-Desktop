@@ -401,9 +401,12 @@ export default function Dashboard() {
                   variant="flat">
                   {getProjectStatus(proj)}
                 </Chip>
-                <span className="text-primary text-sm font-medium">
+                <button
+                  onClick={() => navigate(`/editor/${proj.id}`)}
+                  className="text-primary text-sm font-medium cursor-pointer bg-transparent border-none p-0 hover:underline"
+                  type="button">
                   Click to open →
-                </span>
+                </button>
               </CardFooter>
             </Card>
           ))}
