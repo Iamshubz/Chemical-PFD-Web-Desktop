@@ -19,11 +19,9 @@ class ComponentWidget(QWidget):
         h = default_size.height()
 
         if w > 0 and h > 0:
-            scale = 100.0 / max(w, h)
-            new_w = max(20, int(w * scale))
-            new_h = max(20, int(h * scale))
+            new_w, new_h = self.calculate_logical_size((w, h))
         else:
-            new_w, new_h = 100, 60
+            new_w, new_h = 38, 38
 
         self.setFixedSize(new_w, new_h)
 
@@ -129,33 +127,27 @@ class ComponentWidget(QWidget):
     
     def calculate_logical_size(self, svg_size):
         """
-        Calculate logical component size that maintains aspect ratio.
-        Uses a standard scale factor so components are reasonably sized.
-        
-        Scale to approximately 100px on the longer dimension to match web defaults.
+        Calculate logical component size that synchronizes precisely with the Web frontend targetArea geometry.
         """
+        import math
         width, height = svg_size
         
-        if width == 0 or height == 0:
-            return (100, 60)  # Fallback
+        if width <= 0 or height <= 0:
+            return (38, 38)  # Fallback
         
-        # Target size for the longer dimension
-        target_size = 100.0
+        # Base target area for new drops. Increased from web's 1500 to 3500 to
+        # give a slightly larger default appearance natively on Desktop (~59px).
+        target_area = 3500.0
         
         # Calculate aspect ratio
         aspect_ratio = float(width) / float(height)
         
-        if width >= height:
-            # Width is longer
-            logical_width = target_size
-            logical_height = target_size / aspect_ratio
-        else:
-            # Height is longer
-            logical_height = target_size
-            logical_width = target_size * aspect_ratio
+        # Match Web calculation exactly
+        logical_height = math.sqrt(target_area / aspect_ratio)
+        logical_width = logical_height * aspect_ratio
         
-        # Ensure minimum size for usability, but maintain aspect ratio
-        min_dimension = 20.0  # Absolute minimum for visibility
+        # Ensure minimum size for usability
+        min_dimension = 10.0  
         
         if logical_width < min_dimension or logical_height < min_dimension:
             # Scale up proportionally to meet minimum
@@ -163,8 +155,8 @@ class ComponentWidget(QWidget):
             logical_width *= scale_factor
             logical_height *= scale_factor
         
-        # Round to nearest integer while preserving aspect ratio as much as possible
-        return (round(logical_width), round(logical_height))
+        # Round to nearest integer to maintain crisp desktop rendering
+        return (int(round(logical_width)), int(round(logical_height)))
 
     def load_grips_from_json(self):
         """
@@ -316,7 +308,7 @@ class ComponentWidget(QWidget):
         pos = self.map_svg_to_widget_coords(grip["x"], grip["y"], svg_rect)
         center = QPoint(int(pos.x()), int(pos.y()))
 
-        radius = 6 if self.hover_port == idx else 4
+        radius = 4 if self.hover_port == idx else 3
         color = QColor("#22c55e") if self.hover_port == idx else QColor("cyan")
         
         # Scale radius by zoom level to prevent "giant dots" at low zoom
@@ -639,7 +631,7 @@ class ComponentWidget(QWidget):
 
     # ---------------------- SERIALIZATION ----------------------
     # ---------------------- ZOOM LOGIC ----------------------
-    PORT_PAD = 6   # extra space around SVG for port circles at edges
+    PORT_PAD = 4   # extra space around SVG for port circles at edges
     LABEL_H = 20   # extra height for component label below SVG
 
     def update_visuals(self, zoom_level):
