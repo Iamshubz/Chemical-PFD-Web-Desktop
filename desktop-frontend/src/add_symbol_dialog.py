@@ -1,12 +1,13 @@
 import os
+import json
+from datetime import datetime
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QLineEdit, QTextEdit, QFileDialog
+    QPushButton, QLineEdit, QFileDialog, QComboBox
 )
 
-from src.api_client import post_component
-import src.app_state as app_state
+from src.api_client import post_component, get_components
 from src.grip_editor_dialog import GripEditorDialog
 
 class AddSymbolDialog(QDialog):
@@ -61,8 +62,9 @@ class AddSymbolDialog(QDialog):
         #     }
         # """)
 
-        self.svg_path = None
-        self.png_path = None
+        self.svg_path = ""
+        self.png_path = ""
+        self.grips_json = "[]"
 
         # Apply the passed theme immediately
         self.apply_theme(theme)
@@ -86,23 +88,30 @@ class AddSymbolDialog(QDialog):
         layout.addWidget(title)
 
         # --- Input Fields ---
-        self.sno = self._line(layout, "S No")
-        self.parent = self._line(layout, "Parent")
-        self.name = self._line(layout, "Name")
-        self.legend = self._line(layout, "Legend")
-        self.suffix = self._line(layout, "Suffix")
-        self.object = self._line(layout, "Object")
+        self.name = self._line(layout, "Component Name", "e.g. My Custom Heat Exchanger")
 
-        # Grips field
-        grips_label = QLabel("Grips (JSON)")
-        layout.addWidget(grips_label)
+        layout.addWidget(QLabel("Category"))
+        self.category = QComboBox()
+        self.category.addItem("Select category")
+        self._load_categories()
+        layout.addWidget(self.category)
 
-        self.grips = QTextEdit()
-        self.grips.setPlaceholderText('[{"x":50,"y":100,"side":"top"}]')
-        layout.addWidget(self.grips)
+        self.new_category = self._line(layout, "New Category (Optional)", "Or create new...")
+        self.legend = self._line(layout, "Legend", "e.g. P, HEX, V")
+        self.suffix = self._line(layout, "Suffix", "e.g. A, B")
+
+        self.label_format = QLabel("Label format: Legend-Count-Suffix (e.g. P-01-A)")
+        self.label_format.setStyleSheet("font-size: 12px; opacity: 0.85;")
+        layout.addWidget(self.label_format)
+
+        self.label_preview = QLabel("Preview: --")
+        self.label_preview.setStyleSheet("font-size: 13px; font-weight: 600;")
+        layout.addWidget(self.label_preview)
+        self.legend.textChanged.connect(self._update_label_preview)
+        self.suffix.textChanged.connect(self._update_label_preview)
 
         # File pickers
-        layout.addWidget(QLabel("SVG File"))
+        layout.addWidget(QLabel("Canvas SVG *"))
         self.svg_btn = QPushButton("Choose SVG File")
         self.svg_btn.setObjectName("fileBtn")
         self.svg_btn.clicked.connect(self.pick_svg)
@@ -112,9 +121,14 @@ class AddSymbolDialog(QDialog):
         self.edit_grips_btn = QPushButton("Open Grip Editor")
         self.edit_grips_btn.setObjectName("fileBtn")
         self.edit_grips_btn.clicked.connect(self.open_grip_editor)
+        self.edit_grips_btn.setEnabled(False)
         layout.addWidget(self.edit_grips_btn)
 
-        layout.addWidget(QLabel("PNG File"))
+        self.grips_status = QLabel("Grips: 0 configured")
+        self.grips_status.setStyleSheet("font-size: 12px; opacity: 0.85;")
+        layout.addWidget(self.grips_status)
+
+        layout.addWidget(QLabel("Toolbar Icon (PNG) *"))
         self.png_btn = QPushButton("Choose PNG File")
         self.png_btn.setObjectName("fileBtn")
         self.png_btn.clicked.connect(self.pick_png)
@@ -129,7 +143,7 @@ class AddSymbolDialog(QDialog):
         self.cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(self.cancel_btn)
 
-        self.submit_btn = QPushButton("Submit")
+        self.submit_btn = QPushButton("Create Component")
         self.submit_btn.setObjectName("submitBtn")
         self.submit_btn.clicked.connect(self.submit)
         btn_row.addWidget(self.submit_btn)
@@ -189,7 +203,7 @@ class AddSymbolDialog(QDialog):
                 font-weight: 500;
             }}
             
-            QLineEdit, QTextEdit {{
+            QLineEdit, QComboBox {{
                 background-color: {input_bg};
                 color: {input_text};
                 border: 1px solid {input_border};
@@ -197,8 +211,12 @@ class AddSymbolDialog(QDialog):
                 padding: 6px;
                 font-size: 14px;
             }}
-            QLineEdit:focus, QTextEdit:focus {{
+            QLineEdit:focus, QComboBox:focus {{
                 border: 2px solid {input_border};
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 24px;
             }}
 
             QPushButton {{
@@ -229,19 +247,59 @@ class AddSymbolDialog(QDialog):
             }}
         """)
 
-    def _line(self, layout, placeholder):
-        lbl = QLabel(placeholder)
+    def _line(self, layout, label_text, placeholder=None):
+        if placeholder is None:
+            placeholder = label_text
+        lbl = QLabel(label_text)
         layout.addWidget(lbl)
         line = QLineEdit()
         line.setPlaceholderText(placeholder)
         layout.addWidget(line)
         return line
 
+    def _load_categories(self):
+        categories = set()
+        try:
+            components = get_components() or []
+            for item in components:
+                parent = (item.get("parent") or "").strip()
+                if parent:
+                    categories.add(parent)
+        except Exception:
+            categories = set()
+
+        for category in sorted(categories):
+            self.category.addItem(category)
+
+    def _update_label_preview(self):
+        legend = self.legend.text().strip()
+        suffix = self.suffix.text().strip()
+        if not legend:
+            self.label_preview.setText("Preview: --")
+            return
+        label = f"{legend}-01-{suffix}" if suffix else f"{legend}-01"
+        self.label_preview.setText(f"Preview: {label}")
+
+    def _selected_category(self):
+        custom_category = self.new_category.text().strip()
+        if custom_category:
+            return custom_category
+        selected = self.category.currentText().strip()
+        if selected and selected != "Select category":
+            return selected
+        return ""
+
+    def _generate_s_no(self):
+        return datetime.now().strftime("%H%M%S%f")[-10:]
+
     def pick_svg(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select SVG", "", "SVG Files (*.svg)")
         if path:
             self.svg_path = path
             self.svg_btn.setText(os.path.basename(path))
+            self.edit_grips_btn.setEnabled(True)
+            self.grips_json = "[]"
+            self.grips_status.setText("Grips: 0 configured")
 
     def pick_png(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select PNG", "", "PNG Files (*.png)")
@@ -250,40 +308,91 @@ class AddSymbolDialog(QDialog):
             self.png_btn.setText(os.path.basename(path))
 
     def submit(self):
-        if not all([self.sno.text(), self.name.text(), self.object.text()]):
-            QtWidgets.QMessageBox.warning(self, "Missing Fields", "S No, Name & Object are required.")
+        component_name = self.name.text().strip()
+        category = self._selected_category()
+
+        missing = []
+        if not component_name:
+            missing.append("Component Name")
+        if not category:
+            missing.append("Category or New Category")
+        if not self.svg_path:
+            missing.append("Canvas SVG")
+        if not self.png_path:
+            missing.append("Toolbar Icon (PNG)")
+
+        if missing:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Required Fields",
+                "Please provide:\n- " + "\n- ".join(missing),
+            )
             return
 
+        object_name = "".join(component_name.split())
+        legend = self.legend.text().strip()
+        suffix = self.suffix.text().strip()
+
         data = {
-            "s_no": self.sno.text(),
-            "parent": self.parent.text(),
-            "name": self.name.text(),
-            "legend": self.legend.text(),
-            "suffix": self.suffix.text(),
-            "object": self.object.text(),
-            "grips": self.grips.toPlainText(),
+            "s_no": self._generate_s_no(),
+            "parent": category,
+            "name": component_name,
+            "legend": legend,
+            "suffix": suffix,
+            "object": object_name,
+            "grips": self.grips_json,
         }
 
-        files = {}
-        if self.svg_path:
-            files["svg"] = open(self.svg_path, "rb")
-        if self.png_path:
-            files["png"] = open(self.png_path, "rb")
+        files = {
+            "svg": open(str(self.svg_path), "rb"),
+            "png": open(str(self.png_path), "rb"),
+        }
 
-        response = post_component(data, files)
+        try:
+            response = post_component(data, files)
+        finally:
+            for file_obj in files.values():
+                try:
+                    file_obj.close()
+                except Exception:
+                    pass
 
-        if hasattr(response, "status_code") and response.status_code in (200, 201):
+        if response is not None and response.status_code in (200, 201):
             QtWidgets.QMessageBox.information(self, "Success", "Symbol added successfully.")
             self.accept()
         else:
-            QtWidgets.QMessageBox.critical(self, "Error", "Failed to add component.")
+            details = ""
+            if response is not None:
+                try:
+                    details = response.text
+                except Exception:
+                    details = ""
+            error_msg = "Failed to add component."
+            if details:
+                error_msg += f"\n\n{details}"
+            QtWidgets.QMessageBox.critical(self, "Error", error_msg)
 
     def open_grip_editor(self):
         if not self.svg_path:
             QtWidgets.QMessageBox.warning(self, "No SVG", "Please select an SVG file first.")
             return
 
+        if not os.path.exists(self.svg_path):
+            QtWidgets.QMessageBox.warning(self, "Invalid SVG", "Selected SVG file was not found. Please reselect it.")
+            self.svg_path = ""
+            self.svg_btn.setText("Choose SVG File")
+            self.edit_grips_btn.setEnabled(False)
+            self.grips_json = "[]"
+            self.grips_status.setText("Grips: 0 configured")
+            return
+
         dlg = GripEditorDialog(self.svg_path, self, theme=self.current_theme)
+        dlg.load_grips_json(self.grips_json)
         if dlg.exec_() == QDialog.Accepted:
             grips_json = dlg.get_grips_json()
-            self.grips.setText(grips_json)
+            self.grips_json = grips_json
+            try:
+                grip_count = len(json.loads(grips_json))
+            except Exception:
+                grip_count = 0
+            self.grips_status.setText(f"Grips: {grip_count} configured")
