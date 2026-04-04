@@ -15,6 +15,9 @@ import {
   CardFooter,
   Image,
   Tooltip,
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
 } from "@heroui/react";
 
 import { useComponents } from "@/context/ComponentContext";
@@ -50,6 +53,9 @@ export default function Components() {
   // Interactive Grip State
   const [activeGripIndex, setActiveGripIndex] = useState<number | null>(0);
   const imageRef = useRef<HTMLImageElement>(null);
+
+  // UI View State
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   // Edit State
   const [editingComponent, setEditingComponent] = useState<{
@@ -373,14 +379,69 @@ export default function Components() {
         scrollBehavior="inside"
         size="3xl"
         onOpenChange={onOpenChange}
+        isDismissable={false}
       >
         <ModalContent>
           {(onClose) => (
             <>
-              <ModalHeader className="flex flex-col gap-1">
-                {editingComponent
-                  ? `Edit ${editingComponent.name}`
-                  : "Add New Component"}
+              <ModalHeader className="flex justify-between items-center w-full pr-8">
+                <div className="flex flex-col gap-1">
+                  {editingComponent
+                    ? `Edit ${editingComponent.name}`
+                    : "Add New Component"}
+                </div>
+                <Popover isOpen={isHelpOpen} onOpenChange={setIsHelpOpen} placement="bottom-end">
+                  <PopoverTrigger>
+                    <Button
+                      isIconOnly
+                      variant="light"
+                      className="text-gray-500 hover:text-primary transition-colors text-xl"
+                      aria-label="Toggle Component Help"
+                    >
+                      ℹ️
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[500px]">
+                    <div className="p-4 bg-white dark:bg-gray-900 rounded-xl text-sm relative">
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="light"
+                        className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                        onPress={() => setIsHelpOpen(false)}
+                      >
+                        ✕
+                      </Button>
+                      <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-4 flex items-center gap-2 text-base w-11/12">
+                        Component Requirements Guide
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 text-gray-600 dark:text-gray-300 leading-relaxed">
+                        <div>
+                          <strong className="block text-gray-800 dark:text-gray-100 mb-1">File Requirements</strong>
+                          <ul className="list-disc pl-4 space-y-1 text-xs">
+                            <li><b>PNG:</b> Displayed as the thumbnail in sidebars.</li>
+                            <li><b>SVG:</b> Rendered on the piping canvas.</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <strong className="block text-gray-800 dark:text-gray-100 mb-1">Label Generation</strong>
+                          <p className="text-xs">Format: <code>Legend-Count-Suffix</code> (e.g., <code>P-01-A</code>) representing type and chronological order.</p>
+                        </div>
+                        <div>
+                          <strong className="block text-gray-800 dark:text-gray-100 mb-1">Field Definitions</strong>
+                          <ul className="list-disc pl-4 space-y-1 text-xs">
+                            <li><b>Legend:</b> The base prefix (e.g., 'HX').</li>
+                            <li><b>Suffix:</b> An optional trailing specifier (e.g., 'A').</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <strong className="block text-gray-800 dark:text-gray-100 mb-1">Grips & Connectors</strong>
+                          <p className="text-xs">Anchor points that snap pipes and lines to the boundaries of this component.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </ModalHeader>
               <ModalBody>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
