@@ -76,8 +76,7 @@ def register(username: str, email: str, password: str):
     msg = (
         data.get("detail")
         or data.get("message")
-        or str(data)
-        or f"Registration failed (status {resp.status_code})."
+        or (str(data) if data else f"Registration failed (status {resp.status_code}).")
     )
     raise ApiError(msg)
 
