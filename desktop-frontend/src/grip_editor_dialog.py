@@ -342,7 +342,8 @@ class GripEditorDialog(QDialog):
                 continue
 
             x_abs = left + (x_percent / 100.0) * width if width > 0 else left
-            y_abs = top + (y_percent / 100.0) * height if height > 0 else top
+            # Stored grips use renderer convention: y=100 at top, y=0 at bottom.
+            y_abs = top + ((100.0 - y_percent) / 100.0) * height if height > 0 else top
             self.points.append({"x": x_abs, "y": y_abs, "side": side})
 
         self.refresh_grips()
@@ -602,7 +603,8 @@ class GripEditorDialog(QDialog):
         percentage_grips = []
         for p in self.points:
             x_percent = ((p["x"] - left) / width) * 100.0 if width > 0 else 0
-            y_percent = ((p["y"] - top) / height) * 100.0 if height > 0 else 0
+            # Persist Y in renderer convention: y=100 at top, y=0 at bottom.
+            y_percent = (100.0 - ((p["y"] - top) / height) * 100.0) if height > 0 else 0
             
             percentage_grips.append({
                 "x": round(x_percent, 2),
