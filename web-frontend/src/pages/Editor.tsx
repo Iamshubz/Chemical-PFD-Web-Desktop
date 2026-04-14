@@ -2493,54 +2493,54 @@ export default function Editor() {
                     // Flatten components list
                     const allComps = Object.values(components).flatMap(cat => Object.values(cat));
                     const idMapping: Record<string, number> = {};
-                    
+
                     let currentX = 100;
                     const defaultY = 300;
-                    
+
                     const generatedComponents = result.components || [];
                     const generatedConnections = result.connections || [];
-                    
+
                     generatedComponents.forEach((aiComp: any) => {
                       // Attempt to find matching real component
-                      const match = allComps.find(c => 
-                        c.name.toLowerCase().includes(aiComp.type.toLowerCase()) || 
+                      const match = allComps.find(c =>
+                        c.name.toLowerCase().includes(aiComp.type.toLowerCase()) ||
                         c.object?.toLowerCase().includes(aiComp.type.toLowerCase())
                       ) || allComps[0]; // fallback
-                      
+
                       if (match) {
-                        const added = editorStore.addItem(projectId, match, { 
-                          x: currentX, 
-                          y: defaultY 
+                        const added = editorStore.addItem(projectId, match, {
+                          x: currentX,
+                          y: defaultY
                         });
-                        
+
                         if (added) {
                           idMapping[aiComp.id] = added.id;
                           currentX += 300; // Space out horizontally
                         }
                       }
                     });
-                    
+
                     generatedConnections.forEach((aiConn: any) => {
                       const realSourceId = idMapping[aiConn.from];
                       const realTargetId = idMapping[aiConn.to];
-                      
+
                       if (realSourceId && realTargetId) {
                         editorStore.addConnection(projectId, {
-                           sourceItemId: realSourceId,
-                           targetItemId: realTargetId,
-                           sourceGripIndex: 1, // Right
-                           targetGripIndex: 3, // Left
-                           waypoints: []
+                          sourceItemId: realSourceId,
+                          targetItemId: realTargetId,
+                          sourceGripIndex: 1, // Right
+                          targetGripIndex: 3, // Left
+                          waypoints: []
                         });
                       }
                     });
-                    
+
                     setShowAIModal(false);
                     setAiPrompt("");
                   } catch (err: any) {
                     setAiError(
-                      err.response?.data?.error || 
-                      err.message || 
+                      err.response?.data?.error ||
+                      err.message ||
                       "Something went wrong. Please try again."
                     );
                   } finally {
