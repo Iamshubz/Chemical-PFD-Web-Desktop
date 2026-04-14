@@ -37,6 +37,7 @@ environ.Env.read_env(BASE_DIR / ".env")
 SECRET_KEY = env("SECRET_KEY")
 
 DEBUG = env("DEBUG")
+GEMINI_API_KEY = env("GEMINI_API_KEY", default="")
 
 ALLOWED_HOSTS = [
     "chemical-pfd-web-desktop.onrender.com",
