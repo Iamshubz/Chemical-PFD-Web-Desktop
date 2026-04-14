@@ -86,6 +86,7 @@ import {
   createProject,
   fetchProject,
   saveProjectCanvas,
+  generateAIDiagram,
 } from "@/api/projectApi";
 import { convertToBackendFormat, SavedProject } from "@/utils/projectStorage";
 import { ConnectionPreview } from "@/components/Canvas/ConnectionPreview";
@@ -112,7 +113,10 @@ const resolveImageUrl = (url: string) => {
 };
 
 export default function Editor() {
+  const [aiError, setAiError] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
   const [showAIModal, setShowAIModal] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
   const { projectId } = useParams();
   const navigate = useNavigate();
   const [leftCollapsed, setLeftCollapsed] = useState(false);
@@ -1468,10 +1472,10 @@ export default function Editor() {
           setTempConnection((prev: any) =>
             prev
               ? {
-                  ...prev,
-                  currentX: pointer.x,
-                  currentY: pointer.y,
-                }
+                ...prev,
+                currentX: pointer.x,
+                currentY: pointer.y,
+              }
               : null,
           );
         }
@@ -2317,8 +2321,8 @@ export default function Editor() {
                 <div className="text-black font-medium">Canvas Empty</div>
                 <div className="text-sm text-gray-400 mt-1">
                   Drag components from the sidebar <br />
-                  <span className="font-bold">or</span> drag and drop a .pfd
-                  file to get started.
+                  <span className="font-bold">OR Generate using AI</span> <br />
+                  or drag and drop a .pfd file to get started.
                 </div>
               </div>
             </div>
@@ -2439,7 +2443,21 @@ export default function Editor() {
             <textarea
               className="w-full border p-2 mb-3 rounded dark:bg-gray-800"
               placeholder="e.g. Pump → Heat Exchanger → Tank"
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
             />
+
+            {aiError && (
+              <div className="text-red-500 text-sm mb-2">{aiError}</div>
+            )}
+
+            {/* EXAMPLES ADDED HERE */}
+            <div className="text-xs text-gray-500 mb-3">
+              <p className="font-semibold mb-1">Examples:</p>
+              <p>• Pump → Heat Exchanger → Tank</p>
+              <p>• Tank → Pump → Valve</p>
+              <p>• Pump → Valve → Tank</p>
+            </div>
 
             <div className="flex justify-end gap-2">
               <button
@@ -2447,9 +2465,89 @@ export default function Editor() {
                 onClick={() => setShowAIModal(false)}>
                 Cancel
               </button>
+              <button
+                className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+                disabled={isGenerating}
+                onClick={async () => {
+                  if (!aiPrompt.trim()) {
+                    setAiError("Please enter a description first.");
+                    return;
+                  }
 
-              <button className="bg-blue-600 text-white px-4 py-2 rounded">
-                Generate Diagram
+                  if (!projectId) {
+                    setAiError("You must create or open a project first.");
+                    return;
+                  }
+
+                  setAiError("");
+                  setIsGenerating(true);
+
+                  try {
+                    const result = await generateAIDiagram(aiPrompt);
+
+                    if (result.error) {
+                      setAiError(result.error);
+                      return;
+                    }
+
+                    // Flatten components list
+                    const allComps = Object.values(components).flatMap(cat => Object.values(cat));
+                    const idMapping: Record<string, number> = {};
+                    
+                    let currentX = 100;
+                    const defaultY = 300;
+                    
+                    const generatedComponents = result.components || [];
+                    const generatedConnections = result.connections || [];
+                    
+                    generatedComponents.forEach((aiComp: any) => {
+                      // Attempt to find matching real component
+                      const match = allComps.find(c => 
+                        c.name.toLowerCase().includes(aiComp.type.toLowerCase()) || 
+                        c.object?.toLowerCase().includes(aiComp.type.toLowerCase())
+                      ) || allComps[0]; // fallback
+                      
+                      if (match) {
+                        const added = editorStore.addItem(projectId, match, { 
+                          x: currentX, 
+                          y: defaultY 
+                        });
+                        
+                        if (added) {
+                          idMapping[aiComp.id] = added.id;
+                          currentX += 300; // Space out horizontally
+                        }
+                      }
+                    });
+                    
+                    generatedConnections.forEach((aiConn: any) => {
+                      const realSourceId = idMapping[aiConn.from];
+                      const realTargetId = idMapping[aiConn.to];
+                      
+                      if (realSourceId && realTargetId) {
+                        editorStore.addConnection(projectId, {
+                           sourceItemId: realSourceId,
+                           targetItemId: realTargetId,
+                           sourceGripIndex: 1, // Right
+                           targetGripIndex: 3, // Left
+                           waypoints: []
+                        });
+                      }
+                    });
+                    
+                    setShowAIModal(false);
+                    setAiPrompt("");
+                  } catch (err: any) {
+                    setAiError(
+                      err.response?.data?.error || 
+                      err.message || 
+                      "Something went wrong. Please try again."
+                    );
+                  } finally {
+                    setIsGenerating(false);
+                  }
+                }}>
+                {isGenerating ? "Generating..." : "Generate Diagram"}
               </button>
             </div>
           </div>
