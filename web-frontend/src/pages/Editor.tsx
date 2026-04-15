@@ -86,6 +86,7 @@ import {
   createProject,
   fetchProject,
   saveProjectCanvas,
+  generateAIDiagram,
 } from "@/api/projectApi";
 import { convertToBackendFormat, SavedProject } from "@/utils/projectStorage";
 import { ConnectionPreview } from "@/components/Canvas/ConnectionPreview";
@@ -115,6 +116,7 @@ export default function Editor() {
   const [aiError, setAiError] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [showAIModal, setShowAIModal] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
   const { projectId } = useParams();
   const navigate = useNavigate();
   const [leftCollapsed, setLeftCollapsed] = useState(false);
@@ -2441,6 +2443,8 @@ export default function Editor() {
             <textarea
               className="w-full border p-2 mb-3 rounded dark:bg-gray-800"
               placeholder="e.g. Pump → Heat Exchanger → Tank"
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
             />
 
             {aiError && (
@@ -2461,26 +2465,87 @@ export default function Editor() {
                 onClick={() => setShowAIModal(false)}>
                 Cancel
               </button>
-
               <button
                 className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
                 disabled={isGenerating}
-                onClick={() => {
-                  setAiError(""); // clear previous error
+                onClick={async () => {
+                  if (!aiPrompt.trim()) {
+                    setAiError("Please enter a description first.");
+                    return;
+                  }
+
+                  if (!projectId) {
+                    setAiError("You must create or open a project first.");
+                    return;
+                  }
+
+                  setAiError("");
                   setIsGenerating(true);
 
-                  setTimeout(() => {
-                    const isSuccess = Math.random() > 0.5;
+                  try {
+                    const result = await generateAIDiagram(aiPrompt);
 
-                    if (!isSuccess) {
-                      setAiError("Something went wrong. Please try again.");
-                      setIsGenerating(false);
+                    if (result.error) {
+                      setAiError(result.error);
                       return;
                     }
 
-                    setIsGenerating(false);
+                    // Flatten components list
+                    const allComps = Object.values(components).flatMap(cat => Object.values(cat));
+                    const idMapping: Record<string, number> = {};
+
+                    let currentX = 100;
+                    const defaultY = 300;
+
+                    const generatedComponents = result.components || [];
+                    const generatedConnections = result.connections || [];
+
+                    generatedComponents.forEach((aiComp: any) => {
+                      // Attempt to find matching real component
+                      const match = allComps.find(c =>
+                        c.name.toLowerCase().includes(aiComp.type.toLowerCase()) ||
+                        c.object?.toLowerCase().includes(aiComp.type.toLowerCase())
+                      ) || allComps[0]; // fallback
+
+                      if (match) {
+                        const added = editorStore.addItem(projectId, match, {
+                          x: currentX,
+                          y: defaultY
+                        });
+
+                        if (added) {
+                          idMapping[aiComp.id] = added.id;
+                          currentX += 300; // Space out horizontally
+                        }
+                      }
+                    });
+
+                    generatedConnections.forEach((aiConn: any) => {
+                      const realSourceId = idMapping[aiConn.from];
+                      const realTargetId = idMapping[aiConn.to];
+
+                      if (realSourceId && realTargetId) {
+                        editorStore.addConnection(projectId, {
+                          sourceItemId: realSourceId,
+                          targetItemId: realTargetId,
+                          sourceGripIndex: 1, // Right
+                          targetGripIndex: 3, // Left
+                          waypoints: []
+                        });
+                      }
+                    });
+
                     setShowAIModal(false);
-                  }, 2000);
+                    setAiPrompt("");
+                  } catch (err: any) {
+                    setAiError(
+                      err.response?.data?.error ||
+                      err.message ||
+                      "Something went wrong. Please try again."
+                    );
+                  } finally {
+                    setIsGenerating(false);
+                  }
                 }}>
                 {isGenerating ? "Generating..." : "Generate Diagram"}
               </button>
