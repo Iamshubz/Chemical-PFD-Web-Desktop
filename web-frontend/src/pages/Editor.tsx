@@ -1472,10 +1472,10 @@ export default function Editor() {
           setTempConnection((prev: any) =>
             prev
               ? {
-                ...prev,
-                currentX: pointer.x,
-                currentY: pointer.y,
-              }
+                  ...prev,
+                  currentX: pointer.x,
+                  currentY: pointer.y,
+                }
               : null,
           );
         }
@@ -2490,8 +2490,11 @@ export default function Editor() {
                       return;
                     }
 
-                    // Flatten components list
-                    const allComps = Object.values(components).flatMap(cat => Object.values(cat));
+                    // 🔹 Flatten components
+                    const allComps = Object.values(components).flatMap(
+                      (group: any) => Object.values(group),
+                    );
+
                     const idMapping: Record<string, number> = {};
 
                     let currentX = 100;
@@ -2500,48 +2503,85 @@ export default function Editor() {
                     const generatedComponents = result.components || [];
                     const generatedConnections = result.connections || [];
 
+                    // 🔹 Add components
+                    // 🔹 Define normalize FIRST
+                    const normalizeType = (text: string) => {
+                      const t = text.toLowerCase();
+
+                      if (t.includes("pump")) return "pump";
+                      if (t.includes("valve")) return "valve";
+                      if (t.includes("heat")) return "heat exchanger";
+                      if (t.includes("tank") || t.includes("vessel"))
+                        return "tank";
+
+                      return t;
+                    };
+
+                    // 🔹 Then loop
                     generatedComponents.forEach((aiComp: any) => {
-                      // Attempt to find matching real component
-                      const match = allComps.find(c =>
-                        c.name.toLowerCase().includes(aiComp.type.toLowerCase()) ||
-                        c.object?.toLowerCase().includes(aiComp.type.toLowerCase())
-                      ) || allComps[0]; // fallback
+                      const searchText = (aiComp.variant || aiComp.type || "")
+                        .toString()
+                        .toLowerCase()
+                        .trim();
 
-                      if (match) {
-                        const added = editorStore.addItem(projectId, match, {
-                          x: currentX,
-                          y: defaultY
-                        });
+                      if (!searchText) return;
 
-                        if (added) {
-                          idMapping[aiComp.id] = added.id;
-                          currentX += 300; // Space out horizontally
-                        }
+                      const normalized = normalizeType(searchText);
+
+                      const match = allComps.find((c: any) => {
+                        const name = c.name?.toLowerCase() || "";
+                        const object = c.object?.toLowerCase() || "";
+
+                        return (
+                          name.includes(searchText) ||
+                          object.includes(searchText) ||
+                          name.includes(normalized) ||
+                          object.includes(normalized)
+                        );
+                      });
+
+                      if (!match) {
+                        console.warn("❌ No match:", aiComp);
+                        return;
+                      }
+
+                      const added = editorStore.addItem(projectId, match, {
+                        x: currentX,
+                        y: defaultY,
+                      });
+
+                      if (added) {
+                        idMapping[aiComp.id] = added.id;
+                        currentX += 300;
                       }
                     });
 
-                    generatedConnections.forEach((aiConn: any) => {
-                      const realSourceId = idMapping[aiConn.from];
-                      const realTargetId = idMapping[aiConn.to];
+                    // 🔗 Add connections (ONLY ONCE)
+                    generatedConnections.forEach((conn: any) => {
+                      const source = idMapping[conn.from];
+                      const target = idMapping[conn.to];
 
-                      if (realSourceId && realTargetId) {
-                        editorStore.addConnection(projectId, {
-                          sourceItemId: realSourceId,
-                          targetItemId: realTargetId,
-                          sourceGripIndex: 1, // Right
-                          targetGripIndex: 3, // Left
-                          waypoints: []
-                        });
-                      }
+                      if (!source || !target) return;
+
+                      editorStore.addConnection(projectId, {
+                        sourceItemId: source,
+                        targetItemId: target,
+                        sourceGripIndex: 0,
+                        targetGripIndex: 0,
+                        waypoints: [],
+                      });
                     });
 
+                    // ✅ Cleanup
                     setShowAIModal(false);
                     setAiPrompt("");
                   } catch (err: any) {
+                    console.error("❌ AI ERROR:", err);
+
                     setAiError(
-                      err.response?.data?.error ||
-                      err.message ||
-                      "Something went wrong. Please try again."
+                      err?.response?.data?.error ||
+                        err?.message ||
+                        "Something went wrong. Please try again.",
                     );
                   } finally {
                     setIsGenerating(false);
