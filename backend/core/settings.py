@@ -34,10 +34,7 @@ environ.Env.read_env(BASE_DIR / ".env")
 # SECURITY
 # ===============================
 
-SECRET_KEY = env("SECRET_KEY")
-
-DEBUG = env("DEBUG")
-
+SECRET_KEY = env("SECRET_KEY", default="django-insecure-ci-key")
 ALLOWED_HOSTS = [
     "chemical-pfd-web-desktop.onrender.com",
     "localhost",
