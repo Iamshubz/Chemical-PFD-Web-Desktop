@@ -9,7 +9,7 @@ import dj_database_url
 from datetime import timedelta
 import sys
 
-
+# this is the testing for the CI
 
 # ===============================
 # BASE DIRECTORY
@@ -34,10 +34,7 @@ environ.Env.read_env(BASE_DIR / ".env")
 # SECURITY
 # ===============================
 
-SECRET_KEY = env("SECRET_KEY")
-
-DEBUG = env("DEBUG")
-
+SECRET_KEY = env("SECRET_KEY", default="django-insecure-ci-key")
 ALLOWED_HOSTS = [
     "chemical-pfd-web-desktop.onrender.com",
     "localhost",
@@ -139,7 +136,7 @@ DATABASES = {
             "NAME": os.environ.get("POSTGRES_DB"),
             "USER": os.environ.get("POSTGRES_USER"),
             "PASSWORD": os.environ.get("POSTGRES_PASSWORD"),
-            "HOST": "127.0.0.1",
+            "HOST": os.environ.get("POSTGRES_HOST", "127.0.0.1"),
             "PORT": "5432",
     }
 }
