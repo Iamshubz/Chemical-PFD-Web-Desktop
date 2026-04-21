@@ -16,6 +16,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.db import transaction
 
+from core.gemini_service import generate_diagram
+
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -322,3 +324,46 @@ class ProjectDetailView(generics.RetrieveUpdateDestroyAPIView):
             "status": "success",
             "message": "Project deleted successfully"
         }, status=status.HTTP_200_OK)
+
+
+# ============= AI Endpoints =============
+@api_view(["POST"])
+@permission_classes([AllowAny]) # No login required for now to facilitate easy frontend testing
+def ai_generate(request):
+    """
+    POST /api/ai-generate/
+    Accepts: { "prompt": "Pump connected to tank..." }
+    Returns: Structured JSON for the Canvas UI or an Error message.
+    """
+    prompt = request.data.get("prompt")
+    
+    # 1. Basic validation
+    if not prompt or not isinstance(prompt, str):
+        return Response(
+            {"error": "Prompt string is required."}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        # 2. Call the dedicated Gemini service
+        result = generate_diagram(prompt)
+        
+        # 3. Handle graceful LLM rejections
+        if "error" in result:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+            
+        # 4. Return success data
+        return Response(result, status=status.HTTP_200_OK)
+
+    except ValueError as ve:
+        # Configuration errors (like missing API key)
+        return Response(
+            {"error": str(ve)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except Exception as e:
+        # General LLM or runtime errors
+        return Response(
+            {"error": str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

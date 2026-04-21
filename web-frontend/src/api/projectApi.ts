@@ -104,4 +104,10 @@ export const deleteProject = async (id: number): Promise<void> => {
   await client.delete(`/project/${id}/`);
 };
 
+/** POST /ai-generate/ */
+export const generateAIDiagram = async (prompt: string): Promise<any> => {
+  const res = await client.post("/ai-generate/", { prompt });
+  return res.data;
+};
+
 export default client;

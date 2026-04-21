@@ -5,3 +5,4 @@ export * from "./grid";
 export * from "./obstacles";
 export * from "./optimize";
 export * from "./router";
+export * from "./segmentDrag";

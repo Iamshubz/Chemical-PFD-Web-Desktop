@@ -18,5 +18,8 @@ urlpatterns = [
     # Project endpoints
     path('project/', views.ProjectListCreateView.as_view(), name='project-list'),
     path('project/<int:id>/', views.ProjectDetailView.as_view(), name='project-detail'),
+    
+    # ============= AI Endpoints =============
+    path('ai-generate/', views.ai_generate, name='ai-generate'),
   ]
 

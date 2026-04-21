@@ -283,6 +283,7 @@ class CanvasWidget(QWidget):
             suffix = component_data.get('suffix', '')
             svg = component_data.get('svg', '')
             parent = component_data.get('parent', '')
+            grips = component_data.get('grips', '')
         except (json.JSONDecodeError, ValueError):
             # Fallback for old format (plain text)
             object_name = text
@@ -291,13 +292,15 @@ class CanvasWidget(QWidget):
             suffix = ''
             svg = ''
             parent = ''
+            grips = ''
         
         self.create_component_command(object_name, pos, component_data={
             's_no': s_no,
             'legend': legend,
             'suffix': suffix,
             'svg': svg,
-            'parent': parent
+            'parent': parent,
+            'grips': grips,
         })
         event.acceptProposedAction()
 

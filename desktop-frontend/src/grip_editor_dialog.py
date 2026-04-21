@@ -108,6 +108,9 @@ class GripEditorDialog(QDialog):
         self.undo_stack = []
         self.redo_stack = []
         self.grip_items = []  # Track grip graphics items
+        self._press_pos = QtCore.QPoint()
+        self._last_mouse_pos = QtCore.QPoint()
+        self._is_dragging = False
 
         # Main layout
         main_layout = QVBoxLayout(self)
@@ -170,6 +173,10 @@ class GripEditorDialog(QDialog):
         self.auto_edge_checkbox.setChecked(True)
         self.auto_edge_checkbox.stateChanged.connect(self.toggle_auto_edge)
         toolbar.addWidget(self.auto_edge_checkbox)
+
+        self.grip_count_label = QLabel("Grips: 0")
+        self.grip_count_label.setStyleSheet("font-size: 12px; font-weight: 600;")
+        toolbar.addWidget(self.grip_count_label)
         
         toolbar.addStretch()
         
@@ -300,6 +307,49 @@ class GripEditorDialog(QDialog):
         QtWidgets.QShortcut(QtGui.QKeySequence("Meta++"), self, lambda: self.zoom(True))
         QtWidgets.QShortcut(QtGui.QKeySequence("Meta+="), self, lambda: self.zoom(True))
         QtWidgets.QShortcut(QtGui.QKeySequence("Meta+-"), self, lambda: self.zoom(False))
+
+        self._update_grip_count()
+
+    def _update_grip_count(self):
+        self.grip_count_label.setText(f"Grips: {len(self.points)}")
+
+    def load_grips_json(self, grips_json):
+        if not grips_json:
+            self.points = []
+            self.refresh_grips()
+            self.update_preview()
+            self._update_grip_count()
+            return
+
+        try:
+            loaded = json.loads(grips_json)
+        except Exception:
+            loaded = []
+
+        bounds = self.svg_bounds
+        width = bounds.width()
+        height = bounds.height()
+        left = bounds.left()
+        top = bounds.top()
+
+        self.points = []
+        for item in loaded:
+            try:
+                x_percent = float(item.get("x", 0))
+                y_percent = float(item.get("y", 0))
+                side = str(item.get("side", "right"))
+            except Exception:
+                continue
+
+            x_abs = left + (x_percent / 100.0) * width if width > 0 else left
+            # Stored grips use renderer convention: y=100 at top, y=0 at bottom.
+            y_abs = top + ((100.0 - y_percent) / 100.0) * height if height > 0 else top
+            self.points.append({"x": x_abs, "y": y_abs, "side": side})
+
+        self.refresh_grips()
+        self.update_preview()
+        self._update_grip_count()
+
     def apply_theme(self, theme):
         if theme == "dark":
             bg_main = "#0f172a"
@@ -495,6 +545,7 @@ class GripEditorDialog(QDialog):
         
         self.draw_grip(pos.x(), pos.y(), side, index)
         self.update_preview()
+        self._update_grip_count()
 
     def draw_grip(self, x, y, side, index):
         grip = DraggableGripItem(x, y, side, index, self)
@@ -507,6 +558,7 @@ class GripEditorDialog(QDialog):
             self.points.pop(index)
             self.refresh_grips()
             self.update_preview()
+            self._update_grip_count()
 
     def push_undo(self):
         import copy
@@ -521,6 +573,7 @@ class GripEditorDialog(QDialog):
         self.points = self.undo_stack.pop()
         self.refresh_grips()
         self.update_preview()
+        self._update_grip_count()
 
     def redo(self):
         if not self.redo_stack:
@@ -530,6 +583,7 @@ class GripEditorDialog(QDialog):
         self.points = self.redo_stack.pop()
         self.refresh_grips()
         self.update_preview()
+        self._update_grip_count()
 
     def refresh_grips(self):
         for grip in self.grip_items:
@@ -549,7 +603,8 @@ class GripEditorDialog(QDialog):
         percentage_grips = []
         for p in self.points:
             x_percent = ((p["x"] - left) / width) * 100.0 if width > 0 else 0
-            y_percent = ((p["y"] - top) / height) * 100.0 if height > 0 else 0
+            # Persist Y in renderer convention: y=100 at top, y=0 at bottom.
+            y_percent = (100.0 - ((p["y"] - top) / height) * 100.0) if height > 0 else 0
             
             percentage_grips.append({
                 "x": round(x_percent, 2),
