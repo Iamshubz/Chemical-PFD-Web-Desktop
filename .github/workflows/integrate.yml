@@ -13,9 +13,11 @@ jobs:
       postgres:
         image: postgres:15
         env:
+          
           POSTGRES_DB: test_db
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
+          POSTGRES_HOST: localhost
         ports:
           - 5432:5432
         options: >-
