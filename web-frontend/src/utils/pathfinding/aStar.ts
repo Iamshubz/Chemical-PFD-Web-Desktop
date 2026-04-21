@@ -8,6 +8,7 @@ export interface SpatialAStarNode {
   f: number;
   parent: SpatialAStarNode | null;
   direction: 'horizontal' | 'vertical' | null;
+  turns: number; // Number of direction changes so far (max 2 enforced)
 }
 
 class PriorityQueue<T> {
@@ -66,12 +67,11 @@ export function aStarSpatial(
     f: heuristic(startNodeData, goalNodeData),
     parent: null,
     direction: null,
+    turns: 0,
   };
 
   openSet.enqueue(startState, startState.f);
-  bestG.set(`${startId}-null`, 0);
-
-  const DIRECTION_PENALTY = 500; // Heavy penalty for changing direction (L/Z-shapes)
+  bestG.set(`${startId}-null-0`, 0);
 
   while (!openSet.isEmpty()) {
     const current = openSet.dequeue()!;
@@ -94,14 +94,18 @@ export function aStarSpatial(
       const neighborGraphNode = nodes.get(neighbor.nodeId);
       if (!neighborGraphNode) continue;
 
-      let penalty = 0;
-      // If we are changing direction, add penalty
+      // Compute new turn count
+      let newTurns = current.turns;
       if (current.direction !== null && current.direction !== neighbor.direction) {
-        penalty = DIRECTION_PENALTY;
+        newTurns++;
       }
 
-      const tentativeG = current.g + neighbor.distance + penalty;
-      const stateKey = `${neighbor.nodeId}-${neighbor.direction}`;
+      // HARD CONSTRAINT: prune paths with more than 2 turns
+      if (newTurns > 2) continue;
+
+      const tentativeG = current.g + neighbor.distance;
+      // State key includes turns so different turn-count paths to the same node are tracked separately
+      const stateKey = `${neighbor.nodeId}-${neighbor.direction}-${newTurns}`;
 
       if (!bestG.has(stateKey) || tentativeG < bestG.get(stateKey)!) {
         bestG.set(stateKey, tentativeG);
@@ -114,7 +118,8 @@ export function aStarSpatial(
           h: h,
           f: tentativeG + h,
           parent: current,
-          direction: neighbor.direction
+          direction: neighbor.direction,
+          turns: newTurns,
         };
         
         openSet.enqueue(nextState, nextState.f);

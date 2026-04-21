@@ -43,9 +43,10 @@ export default function Register() {
       const message =
         error.response?.data?.error ||
         error.response?.data?.message ||
-        "Registration failed. Please try again.";
+        "Please try again.";
+        // "Registration failed. Please try again.";
 
-      alert(`Registration failed: ${message}`);
+      alert(`Registration failed. ${message}`);
     } finally {
       setIsLoading(false);
     }

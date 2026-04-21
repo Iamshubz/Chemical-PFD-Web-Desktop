@@ -10,7 +10,8 @@ from PyQt5.QtCore import Qt, QMimeData, QSize, QTimer, QPropertyAnimation, QEasi
 from PyQt5.QtGui import QIcon, QDrag, QMovie, QPixmap, QPalette
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLineEdit, QFrame, QSizePolicy,
-    QScrollArea, QLabel, QToolButton, QGridLayout, QLabel, QApplication, QGraphicsOpacityEffect, QHBoxLayout
+    QScrollArea, QLabel, QToolButton, QGridLayout, QLabel, QApplication, QGraphicsOpacityEffect, QHBoxLayout,
+    QMenu, QMessageBox, QDialog, QFormLayout, QDialogButtonBox
 )
 import threading
 import time
@@ -326,6 +327,7 @@ class ComponentLibrary(QWidget):
                     self._download_asset(svg_url, svg_filename, "svg", parent_folder)
 
                 new_data.append({
+                    "id": comp.get("id"),
                     "s_no": s_no,
                     "parent": parent,
                     "name": comp.get("name", "").strip(),
@@ -335,6 +337,7 @@ class ComponentLibrary(QWidget):
                     "svg": svg_filename,
                     "png": png_filename,
                     "grips": comp.get("grips", ""),
+                    "created_by": comp.get("created_by"),
                 })
 
             # Sort by s_no
@@ -455,6 +458,10 @@ class ComponentLibrary(QWidget):
                     
                     # Button (Icon)
                     button = ComponentButton(component, icon_path)
+                    button.setContextMenuPolicy(Qt.CustomContextMenu)
+                    button.customContextMenuRequested.connect(
+                        lambda pos, b=button: self._show_component_context_menu(b, pos)
+                    )
                     # Reset button size policy or fixed size if needed, but 56x56 is fine
                     card_layout.addWidget(button, 0, Qt.AlignCenter)
                     
@@ -563,6 +570,122 @@ class ComponentLibrary(QWidget):
         toast = ToastMessage(self, "Components updated from backend")
         toast.adjustSize()
         toast.show_toast()
+
+    def _show_component_context_menu(self, button, pos):
+        component = button.component_data
+        if not component:
+            return
+
+        menu = QMenu(self)
+        edit_action = menu.addAction("Edit Component")
+        delete_action = menu.addAction("Delete Component")
+
+        selected_action = menu.exec_(button.mapToGlobal(pos))
+
+        if selected_action == edit_action:
+            self._open_edit_component_dialog(component)
+        elif selected_action == delete_action:
+            self._delete_component(component)
+
+    def _open_edit_component_dialog(self, component):
+        component_id = component.get("id")
+        if component_id is None:
+            QMessageBox.warning(self, "Edit Component", "Component ID missing. Please sync components and try again.")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Edit Component")
+        dialog.setModal(True)
+        form_layout = QFormLayout(dialog)
+
+        name_input = QLineEdit(component.get("name", ""))
+        parent_input = QLineEdit(component.get("parent", ""))
+        legend_input = QLineEdit(component.get("legend", ""))
+        suffix_input = QLineEdit(component.get("suffix", ""))
+
+        form_layout.addRow("Name", name_input)
+        form_layout.addRow("Category", parent_input)
+        form_layout.addRow("Legend", legend_input)
+        form_layout.addRow("Suffix", suffix_input)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form_layout.addRow(buttons)
+
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        updated_name = name_input.text().strip()
+        updated_parent = parent_input.text().strip()
+        updated_legend = legend_input.text().strip()
+        updated_suffix = suffix_input.text().strip()
+
+        if not updated_name or not updated_parent:
+            QMessageBox.warning(self, "Edit Component", "Name and Category are required.")
+            return
+
+        payload = {
+            "s_no": component.get("s_no", ""),
+            "name": updated_name,
+            "parent": updated_parent,
+            "legend": updated_legend,
+            "suffix": updated_suffix,
+            "object": component.get("object", ""),
+            "grips": json.dumps(component.get("grips", [])) if isinstance(component.get("grips"), list) else component.get("grips", "[]"),
+        }
+
+        response = api_client.update_component(component_id, payload)
+        if response is not None and response.status_code in (200, 202):
+            QMessageBox.information(self, "Edit Component", "Component updated successfully.")
+            self.reload_components()
+            return
+
+        details = ""
+        if response is not None:
+            try:
+                details = response.text
+            except Exception:
+                details = ""
+        error_message = "Failed to update component."
+        if details:
+            error_message += f"\n\n{details}"
+        QMessageBox.critical(self, "Edit Component", error_message)
+
+    def _delete_component(self, component):
+        component_id = component.get("id")
+        component_name = component.get("name", "Component")
+
+        if component_id is None:
+            QMessageBox.warning(self, "Delete Component", "Component ID missing. Please sync components and try again.")
+            return
+
+        confirmed = QMessageBox.question(
+            self,
+            "Delete Component",
+            f"Delete '{component_name}'? This action cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirmed != QMessageBox.Yes:
+            return
+
+        response = api_client.delete_component(component_id)
+        if response is not None and response.status_code in (200, 204):
+            QMessageBox.information(self, "Delete Component", "Component deleted successfully.")
+            self.reload_components()
+            return
+
+        details = ""
+        if response is not None:
+            try:
+                details = response.text
+            except Exception:
+                details = ""
+        error_message = "Failed to delete component."
+        if details:
+            error_message += f"\n\n{details}"
+        QMessageBox.critical(self, "Delete Component", error_message)
 
     def reload_components(self):
         """

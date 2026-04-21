@@ -9,7 +9,7 @@ import dj_database_url
 from datetime import timedelta
 import sys
 
-# this is the testing for the CI - 2
+# this is the testing for the CI - 4
 
 # ===============================
 # BASE DIRECTORY
@@ -35,6 +35,7 @@ environ.Env.read_env(BASE_DIR / ".env")
 # ===============================
 
 SECRET_KEY = env("SECRET_KEY", default="django-insecure-ci-key")
+GEMINI_API_KEY = env("GEMINI_API_KEY", default="")
 ALLOWED_HOSTS = [
     "chemical-pfd-web-desktop.onrender.com",
     "localhost",
@@ -229,14 +230,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # PRODUCTION SECURITY SETTINGS
 # ===============================
 
-if not DEBUG:
+if not DEBUG and 'test' not in sys.argv:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = "DENY"
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-
 # ===============================
 # AXES CONFIGURATION
 # ===============================

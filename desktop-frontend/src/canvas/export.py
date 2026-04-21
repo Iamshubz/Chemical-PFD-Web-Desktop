@@ -277,11 +277,21 @@ def load_canvas_from_project(canvas, project_data):
             
             comp = ComponentWidget(svg_path, canvas, config=config)
             
+            # Calculate the mathematical Desktop default size
+            svg_dims = comp.get_svg_dimensions()
+            native_w, native_h = comp.calculate_logical_size(svg_dims)
+
             # Set position and size from backend data
             x = float(d.get("x", 0))
             y = float(d.get("y", 0))
-            w = float(d.get("width", 100))
-            h = float(d.get("height", 100))
+            w = float(d.get("width", native_w))
+            h = float(d.get("height", native_h))
+            
+            # Enforce minimum size: if Web saved a tiny component, forcibly 
+            # scale it up to the Desktop's default native dimensions.
+            if w < native_w or h < native_h:
+                w = native_w
+                h = native_h
             
             comp.logical_rect = QRectF(x, y, w, h)
             comp.rotation_angle = float(d.get("rotation", 0))

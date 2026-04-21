@@ -1,5 +1,6 @@
 // src/utils/pathfinding/optimize.ts
-import { Point } from "./types";
+import { Point, Rect } from "./types";
+import { pathHitsObstacle } from "./obstacles";
 
 /**
  * Compress straight line segments in a grid path
@@ -76,4 +77,51 @@ export function optimizePath(path: Point[]): Point[] {
 
   // Ensure orthogonal segments for safety
   return createOrthogonalSegments(compressed);
+}
+
+/**
+ * Enforce a strict Manhattan shape (L or Z) on a path.
+ * Collapses any noisily-routed path back to at most 3 waypoints:
+ *   start → corner → end  (L-shape, horizontal-first)
+ *
+ * If start and end share an X or Y coordinate already (straight line),
+ * the path is returned as-is with just those two points.
+ */
+export function enforceManhattanShape(path: Point[], obstacles: Rect[] = []): Point[] {
+  if (path.length <= 2) return path;
+
+  const start = path[0];
+  const end = path[path.length - 1];
+
+  // Already a straight line — check if it hits an obstacle
+  if (start.x === end.x || start.y === end.y) {
+    const straightPath = [start, end];
+    if (!pathHitsObstacle(straightPath, obstacles)) {
+      return straightPath;
+    }
+    return path; // Fallback to raw A* path
+  }
+
+  // Canonical L-shapes
+  const option1 = [
+    start,
+    { x: end.x, y: start.y },
+    end,
+  ];
+
+  const option2 = [
+    start,
+    { x: start.x, y: end.y },
+    end,
+  ];
+
+  const valid1 = !pathHitsObstacle(option1, obstacles);
+  const valid2 = !pathHitsObstacle(option2, obstacles);
+
+  // Use the first valid L-shape
+  if (valid1) return option1;
+  if (valid2) return option2;
+
+  // If both invalid -> fallback to A* path (already obstacle-safe)
+  return path;
 }
