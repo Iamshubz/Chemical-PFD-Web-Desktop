@@ -109,8 +109,9 @@ class LandingPage(QWidget):
     new_project_clicked = pyqtSignal()
     open_project_clicked = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, canvas_screen=None):
         super().__init__(parent)
+        self.canvas_screen = canvas_screen
         self.setObjectName("landingPage")
 
         # ROOT layout
@@ -230,6 +231,10 @@ class LandingPage(QWidget):
 
         # Logout
         self.logout_btn.clicked.connect(self.on_logout_clicked)
+        
+        # Connect to canvas screen save signal to refresh recent projects
+        if self.canvas_screen:
+            self.canvas_screen.project_saved.connect(self.load_recent_projects)
 
     def showEvent(self, event):
         """Called when the widget becomes visible (e.g. after login)."""
@@ -257,9 +262,8 @@ class LandingPage(QWidget):
                 item.widget().deleteLater()
 
         projects = api_client.get_projects()
-        print(f"[DEBUG] Got {len(projects)} projects")
-        print(f"[DEBUG] First project: {projects[0] if projects else 'None'}")
-
+        print(f"[DEBUG] Got {len(projects)} projects from backend")
+        print(f"[DEBUG] Projects: {[(p.get('id'), p.get('name'), p.get('updated_at')) for p in projects]}")
 
         if not projects:
             empty = QLabel("No recent projects")

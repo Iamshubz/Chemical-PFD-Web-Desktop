@@ -13,20 +13,35 @@ class ComponentWidget(QWidget):
         self.config = config or {}
         self.renderer = QSvgRenderer(svg_path)
 
-        # Standard component size (closer to web default of 100x100)
-        self.setFixedSize(100, 60)
+        # Dynamic size based on SVG dimensions
+        default_size = self.renderer.defaultSize()
+        w = default_size.width()
+        h = default_size.height()
+
+        if w > 0 and h > 0:
+            scale = 100.0 / max(w, h)
+            new_w = max(20, int(w * scale))
+            new_h = max(20, int(h * scale))
+        else:
+            new_w, new_h = 100, 60
+
+        self.setFixedSize(new_w, new_h)
+
 
         self.hover_port = None
         self.is_selected = False
         self.drag_start_global = None
         
         self.rotation_angle = 0
-        self.rotation_angle = 0
         self.drag_start_positions = {}
+        
+        # Validation State
+        self.is_valid = True
+        self.validation_error_msg = ""
         
         # Logical Coordinates (True 100% scale geometry)
         # Initialize from current geometry or valid defaults
-        self.logical_rect = QRectF(self.x(), self.y(), 100, 60)
+        self.logical_rect = QRectF(self.x(), self.y(), new_w, new_h)
 
         # Cache for grips to prevent file reading lag during paint events
         self._cached_grips = None
@@ -63,12 +78,26 @@ class ComponentWidget(QWidget):
     def calculate_svg_rect(self, content_rect):
         """
         Calculate the actual rectangle where SVG will be rendered.
-        Updated to FILL the content_rect (ignoring aspect ratio) to ensure
-        grips at 0% and 100% align with the widget edges.
+        Updated to preserve aspect ratio instead of stretching.
         """
-        # We strictly fill the content_rect so that 0-100% mapping 
-        # aligns with the selection box edges.
-        return QRectF(content_rect)
+        default_size = self.renderer.defaultSize()
+        svg_w = default_size.width()
+        svg_h = default_size.height()
+        
+        if svg_w <= 0 or svg_h <= 0:
+            return QRectF(content_rect)
+            
+        scale_w = content_rect.width() / svg_w
+        scale_h = content_rect.height() / svg_h
+        scale = min(scale_w, scale_h)
+        
+        new_w = svg_w * scale
+        new_h = svg_h * scale
+        
+        x = content_rect.x() + (content_rect.width() - new_w) / 2.0
+        y = content_rect.y() + (content_rect.height() - new_h) / 2.0
+        
+        return QRectF(x, y, new_w, new_h)
     
     def map_svg_to_widget_coords(self, svg_x_percent, svg_y_percent, svg_rect):
         """
@@ -88,8 +117,54 @@ class ComponentWidget(QWidget):
     
     # _should_invert_y_axis REMOVED — web always inverts Y, so we do too
     
-
-
+    def get_svg_dimensions(self):
+        """
+        Get the natural dimensions from the SVG viewBox.
+        Returns (width, height) as a tuple.
+        """
+        if self.renderer.isValid():
+            default_size = self.renderer.defaultSize()
+            return (default_size.width(), default_size.height())
+        return (100, 100)  # Fallback
+    
+    def calculate_logical_size(self, svg_size):
+        """
+        Calculate logical component size that maintains aspect ratio.
+        Uses a standard scale factor so components are reasonably sized.
+        
+        Scale to approximately 100px on the longer dimension to match web defaults.
+        """
+        width, height = svg_size
+        
+        if width == 0 or height == 0:
+            return (100, 60)  # Fallback
+        
+        # Target size for the longer dimension
+        target_size = 100.0
+        
+        # Calculate aspect ratio
+        aspect_ratio = float(width) / float(height)
+        
+        if width >= height:
+            # Width is longer
+            logical_width = target_size
+            logical_height = target_size / aspect_ratio
+        else:
+            # Height is longer
+            logical_height = target_size
+            logical_width = target_size * aspect_ratio
+        
+        # Ensure minimum size for usability, but maintain aspect ratio
+        min_dimension = 20.0  # Absolute minimum for visibility
+        
+        if logical_width < min_dimension or logical_height < min_dimension:
+            # Scale up proportionally to meet minimum
+            scale_factor = max(min_dimension / logical_width, min_dimension / logical_height)
+            logical_width *= scale_factor
+            logical_height *= scale_factor
+        
+        # Round to nearest integer while preserving aspect ratio as much as possible
+        return (round(logical_width), round(logical_height))
 
     def load_grips_from_json(self):
         """
@@ -177,6 +252,13 @@ class ComponentWidget(QWidget):
         return grips
 
     def paintEvent(self, event):
+        # Update tooltip based on validity
+        if not self.is_valid and self.validation_error_msg:
+            self.setToolTip(self.validation_error_msg)
+        else:
+            # We don't want to hide default tooltips if they existed, but currently they are mostly empty
+            self.setToolTip(self.config.get("name", ""))
+            
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
@@ -196,6 +278,25 @@ class ComponentWidget(QWidget):
             painter.setPen(QPen(QColor("#60a5fa"), 2.5))
             painter.setBrush(Qt.NoBrush)
             painter.drawRoundedRect(svg_rect.adjusted(1, 1, -1, -1), 6, 6)
+            
+        # Validation Error Icon (Badge)
+        if not self.is_valid:
+            error_color = QColor("#f87171") if app_state.current_theme == "dark" else QColor("#ef4444")
+            painter.setBrush(error_color)
+            painter.setPen(Qt.NoPen)
+            
+            # Position at top-right corner of the SVG rect
+            radius = 5.5
+            center_x = svg_rect.right() - radius
+            center_y = svg_rect.top() + radius
+            
+            painter.drawEllipse(QPointF(center_x, center_y), radius, radius)
+            
+            # Draw an exclamation mark inside the circle
+            painter.setPen(QPen(Qt.white, 1.5, Qt.SolidLine, Qt.RoundCap))
+            painter.drawLine(QPointF(center_x, center_y - 2), QPointF(center_x, center_y + 1))
+            painter.drawPoint(QPointF(center_x, center_y + 3))
+
 
         # Label (drawn below SVG, within the extra LABEL_H space added by update_visuals)
         if self.config.get('default_label'):
@@ -257,23 +358,41 @@ class ComponentWidget(QWidget):
         """
         Get grip position in LOGICAL coordinates (unscaled).
         
-        Matches web formula exactly:
-          cx = (grip.x / 100) * width
-          cy = ((100 - grip.y) / 100) * height
-        
-        No margins, no offsets — direct percentage of logical size.
+        Crucial: This must match the visual centering logic in calculate_svg_rect
+        so that connections actually touch the SVG image, not just the bounding box.
         """
         grips = self.get_grips()
-
         if 0 <= idx < len(grips):
             grip = grips[idx]
+            
+            # 1. Start with the logical content area (no labels, no padding)
             l_w = self.logical_rect.width()
             l_h = self.logical_rect.height()
             
-            cx = (grip["x"] / 100.0) * l_w
-            cy = ((100.0 - grip["y"]) / 100.0) * l_h
+            # 2. Calculate logic aspect ratio centering (matching calculate_svg_rect logic)
+            default_size = self.renderer.defaultSize()
+            svg_w, svg_h = default_size.width(), default_size.height()
             
-            return QPointF(cx, cy)
+            if svg_w > 0 and svg_h > 0:
+                scale_w = l_w / svg_w
+                scale_h = l_h / svg_h
+                scale = min(scale_w, scale_h)
+                
+                new_w = svg_w * scale
+                new_h = svg_h * scale
+                
+                # Offsets within the logical_rect
+                off_x = (l_w - new_w) / 2.0
+                off_y = (l_h - new_h) / 2.0
+                
+                # 3. Map percentage to the actual SVG area
+                cx = off_x + (grip["x"] / 100.0) * new_w
+                cy = off_y + ((100.0 - grip["y"]) / 100.0) * new_h
+                
+                return QPointF(cx, cy)
+            
+            # Fallback to simple box mapping if SVG invalid
+            return QPointF((grip["x"]/100.0)*l_w, ((100.0-grip["y"])/100.0)*l_h)
 
         return QPointF(0, 0)
 
@@ -313,8 +432,12 @@ class ComponentWidget(QWidget):
             # Record start positions for Undo
             if self.parent() and hasattr(self.parent(), "components"):
                 self.drag_start_positions = {
-                    c: c.pos() for c in self.parent().components if c.is_selected
+                    c: QPointF(c.logical_rect.topLeft()) for c in self.parent().components if c.is_selected
                 }
+                
+                moved_comps = list(self.drag_start_positions.keys())
+                if hasattr(self.parent(), "build_routing_cache"):
+                    self.parent().build_routing_cache(moved_components=moved_comps)
 
             event.accept()
         else:
@@ -394,9 +517,17 @@ class ComponentWidget(QWidget):
                 # Recalculate paths for connections attached to moved components
                 if hasattr(parent, "connections"):
                     moved = {c for c in parent.components if c.is_selected}
+                    routing_cache = getattr(parent, "routing_cache", None)
+                    moved_conns = []
                     for conn in parent.connections:
                         if conn.start_component in moved or conn.end_component in moved:
-                            conn.update_path(parent.components, parent.connections)
+                            conn.update_path(parent.components, parent.connections, routing_cache=routing_cache)
+                            moved_conns.append(conn)
+                    
+                    # Update jumps ONLY for the connections that just moved to eliminate drag lag.
+                    # Full cross-canvas intersection sweep is deferred until mouseRelease.
+                    for conn in moved_conns:
+                        conn._generate_jump_path(parent.connections)
                         
                 # Force full repaint — prevents stale connection artefacts
                 parent.repaint()
@@ -434,16 +565,71 @@ class ComponentWidget(QWidget):
             stack = self.parent().undo_stack
             moved_items = []
             
-            for comp, start_pos in self.drag_start_positions.items():
-                if comp.pos() != start_pos:
-                    moved_items.append((comp, start_pos, comp.pos()))
+            parent = self.parent()
+            has_collision = False
             
-            if moved_items:
-                stack.beginMacro("Move Components")
-                for comp, start, end in moved_items:
-                    cmd = MoveCommand(comp, start, end)
-                    stack.push(cmd)
-                stack.endMacro()
+            # Grab cache for potential snap-back
+            routing_cache = getattr(parent, "routing_cache", None)
+
+            # 1. COLLISION DETECTION
+            if parent and hasattr(parent, "components"):
+                for comp, start_pos in self.drag_start_positions.items():
+                    if comp.logical_rect.topLeft() == start_pos:
+                        continue 
+                    for other in parent.components:
+                        if other not in self.drag_start_positions: 
+                            # Enforce a 35px minimum distance between components.
+                            # Connection "stubs" rigidly extend 20px out, so if components are closer
+                            # than 20px, the lines will pierce them before A* routing even begins.
+                            if comp.logical_rect.adjusted(-35, -35, 35, 35).intersects(other.logical_rect):
+                                has_collision = True
+                                break
+                    if has_collision:
+                        break
+            
+            # 2. REVERT IF COLLISION
+            if has_collision:
+                for comp, start_pos in self.drag_start_positions.items():
+                    z = parent.zoom_level if hasattr(parent, "zoom_level") else 1.0
+                    comp.logical_rect.moveTo(start_pos.x(), start_pos.y())
+                    comp.update_visuals(z)
+                if parent:
+                    if hasattr(parent, "connections"):
+                        moved = set(self.drag_start_positions.keys())
+                        for conn in parent.connections:
+                            if conn.start_component in moved or conn.end_component in moved:
+                                conn.update_path(parent.components, parent.connections, routing_cache=routing_cache)
+                    parent.repaint()
+                    
+                if parent and hasattr(parent, "clear_routing_cache"):
+                    parent.clear_routing_cache()
+                    
+                if parent and hasattr(parent, "connections"):
+                    for conn in parent.connections:
+                        conn._generate_jump_path(parent.connections)
+                
+                self.drag_start_positions.clear()
+                return # Skip pushing to undo stack
+            
+            # 3. IF NO COLLISION, COMMIT MOVE
+            else:
+                for comp, start_pos in self.drag_start_positions.items():
+                    if comp.logical_rect.topLeft() != start_pos:
+                        moved_items.append((comp, start_pos, QPointF(comp.logical_rect.topLeft())))
+                
+                if moved_items:
+                    stack.beginMacro("Move Components")
+                    for comp, start, end in moved_items:
+                        cmd = MoveCommand(comp, start, end)
+                        stack.push(cmd)
+                    stack.endMacro()
+            
+            if parent and hasattr(parent, "clear_routing_cache"):
+                parent.clear_routing_cache()
+                
+            if parent and hasattr(parent, "connections"):
+                for conn in parent.connections:
+                    conn._generate_jump_path(parent.connections)
             
             self.drag_start_positions = {}
 

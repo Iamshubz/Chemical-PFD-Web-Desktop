@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Button } from "@heroui/button";
 
-import { SearchIcon } from "@/components/icons";
 import {
   type ComponentLibrarySidebarProps,
   type CanvasPropertiesSidebarProps,
   type ComponentItem,
 } from "./types";
+
+import { SearchIcon } from "@/components/icons";
 
 export const ComponentLibrarySidebar = ({
   components,
@@ -18,7 +19,10 @@ export const ComponentLibrarySidebar = ({
   className = "",
   isLoading = false,
   error = null,
-}: ComponentLibrarySidebarProps & { isLoading?: boolean; error?: string | null }) => {
+}: ComponentLibrarySidebarProps & {
+  isLoading?: boolean;
+  error?: string | null;
+}) => {
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   const [activeCategory, setActiveCategory] = useState(selectedCategory);
 
@@ -73,10 +77,11 @@ export const ComponentLibrarySidebar = ({
 
         <div className="flex gap-1 overflow-x-auto pb-1">
           <button
-            className={`text-xs px-2 py-1 rounded whitespace-nowrap ${activeCategory === "All"
-              ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300"
-              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-              }`}
+            className={`text-xs px-2 py-1 rounded whitespace-nowrap ${
+              activeCategory === "All"
+                ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300"
+                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+            }`}
             onClick={() => handleCategorySelect("All")}
           >
             All
@@ -84,10 +89,11 @@ export const ComponentLibrarySidebar = ({
           {categories.map((category) => (
             <button
               key={category}
-              className={`text-xs px-2 py-1 rounded whitespace-nowrap ${activeCategory === category
-                ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                }`}
+              className={`text-xs px-2 py-1 rounded whitespace-nowrap ${
+                activeCategory === category
+                  ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300"
+                  : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+              }`}
               onClick={() => handleCategorySelect(category)}
             >
               {category}
@@ -99,7 +105,7 @@ export const ComponentLibrarySidebar = ({
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex justify-center items-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
           </div>
         ) : error ? (
           <div className="p-4 text-center text-sm text-red-500">
@@ -252,10 +258,11 @@ export const CanvasPropertiesSidebar = ({
                   {sortedItems.map((item) => (
                     <div
                       key={item.id}
-                      className={`p-3 border rounded-lg cursor-pointer transition-all ${selectedItemId === item.id
-                        ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
-                        : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                        }`}
+                      className={`p-3 border rounded-lg cursor-pointer transition-all ${
+                        selectedItemId === item.id
+                          ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                          : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                      }`}
                       onClick={() => onSelectItem(item.id)}
                     >
                       <div className="flex items-center gap-3">

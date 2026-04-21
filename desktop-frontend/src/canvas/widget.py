@@ -10,7 +10,29 @@ from src.component_widget import ComponentWidget
 import src.app_state as app_state
 from src.canvas import resources, painter
 from src.canvas.commands import AddCommand, DeleteCommand, MoveCommand, AddConnectionCommand
+from src.canvas.validation import GraphValidator
 
+
+class ConnectionOverlay(QWidget):
+    """Transparent overlay centered on the canvas to draw arrowheads on top of components."""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.canvas = parent
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WA_NoSystemBackground)
+
+    def paintEvent(self, event):
+        if not self.canvas: return
+        qp = QPainter(self)
+        qp.setRenderHint(QPainter.Antialiasing)
+        
+        # Match canvas zoom
+        qp.scale(self.canvas.zoom_level, self.canvas.zoom_level)
+        
+        # PASS 2: DRAW ARROWHEADS ONLY (on top of components)
+        painter.draw_connections(qp, self.canvas.connections, self.canvas.components, 
+                                 theme=app_state.current_theme, zoom=self.canvas.zoom_level, 
+                                 layer="arrows")
 
 
 class CanvasWidget(QWidget):
@@ -47,6 +69,7 @@ class CanvasWidget(QWidget):
         self.file_path = None
         self.is_modified = False
         self.undo_stack.cleanChanged.connect(self.on_undo_stack_changed)
+        self.undo_stack.indexChanged.connect(self.run_validation)
 
         # Configs
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -61,7 +84,46 @@ class CanvasWidget(QWidget):
         from src.theme_manager import theme_manager
         theme_manager.theme_changed.connect(self.update_canvas_theme)
         self.update_canvas_theme()
-    
+        
+        # Validation State
+        self.validation_errors = {
+            "isolated": [],
+            "loops": [],
+            "flow_errors": [],
+            "missing_inlet": False,
+            "missing_outlet": False
+        }
+        
+        # Overlay for arrowheads
+        self.overlay = ConnectionOverlay(self)
+        self.overlay.show()
+        
+    def run_validation(self):
+        """Re-evaluates the canvas state for graph errors matching PFD rules."""
+        validator = GraphValidator(self.components, self.connections)
+        self.validation_errors = validator.validate()
+        
+        # Update component error states
+        for comp in self.components:
+            comp.is_valid = True
+            comp.validation_error_msg = ""
+            
+            error_msgs = []
+            if comp in self.validation_errors["loops"]:
+                comp.is_valid = False
+                error_msgs.append("Circular loop detected.")
+            if comp in self.validation_errors["flow_errors"]:
+                comp.is_valid = False
+                error_msgs.append("Component has no inlet or outlet connections.")
+                
+            if error_msgs:
+                comp.validation_error_msg = "\n".join(error_msgs)
+            
+            comp.update() # Trigger repaint to show/hide error styling
+
+        # Trigger re-paint on the main canvas (e.g. for global warning indicators)
+        self.update()
+
     def expand_to_contain(self, rect):
         """Expand logical size if rect is outside current bounds."""
         margin = 500 # Expansion chunk
@@ -92,7 +154,15 @@ class CanvasWidget(QWidget):
         for comp in self.components:
             comp.update_visuals(self.zoom_level)
             
+        # Update overlay size
+        if hasattr(self, "overlay"):
+            self.overlay.setFixedSize(self.size())
         self.update()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "overlay"):
+            self.overlay.setFixedSize(self.size())
 
     def zoom_in(self):
         self.zoom_level *= 1.1
@@ -164,6 +234,33 @@ class CanvasWidget(QWidget):
             comp.update()
             
         self.update()
+        
+    def build_routing_cache(self, moved_components=None, moved_connections=None):
+        import src.auto_router as auto_router
+        moved_comps = set(moved_components) if moved_components else set()
+        moved_conns = set(moved_connections) if moved_connections else set()
+        
+        static_comps = [c for c in self.components if c not in moved_comps]
+        static_rects = [c.logical_rect for c in static_comps if hasattr(c, 'logical_rect')]
+        
+        static_conns = []
+        static_segs = []
+        for conn in self.connections:
+            if conn in moved_conns: continue
+            if conn.start_component in moved_comps or conn.end_component in moved_comps: continue
+            if conn.end_component is None or not conn.path: continue
+            
+            static_conns.append(conn)
+            pts = conn.path
+            for i in range(len(pts) - 1):
+                static_segs.append((pts[i], pts[i+1]))
+                
+        self.routing_cache = auto_router.build_routing_cache(static_rects, static_segs)
+        self.routing_cache['static_components'] = set(static_comps)
+        self.routing_cache['static_connections'] = set(static_conns)
+        
+    def clear_routing_cache(self):
+        self.routing_cache = None
 
     # ---------------------- DRAG & DROP ----------------------
     def dragEnterEvent(self, event):
@@ -218,6 +315,7 @@ class CanvasWidget(QWidget):
         self.active_connection = Connection(component, grip_index, side)
         # Position the end point at the start point initially
         self.active_connection.current_pos = self.active_connection.get_start_pos()
+        self.build_routing_cache() 
         self.update()
 
     def get_logical_pos(self, pos):
@@ -245,43 +343,8 @@ class CanvasWidget(QWidget):
                     break
 
             if hit_connection:
-                # Drag logic for connection
+                # Select the connection but disable manual dragging
                 hit_connection.is_selected = True
-                self.drag_connection = hit_connection
-                self.drag_start_pos = logical_pos # Store LOGICAL start
-
-                best_param = "path_offset"
-                best_sensitivity = QPointF(0, 0)
-                best_mag_sq = -1
-
-                params = ["path_offset", "start_adjust", "end_adjust"]
-                base_points = list(hit_connection.path)
-
-                for p in params:
-                    old = getattr(hit_connection, p)
-                    setattr(hit_connection, p, old + 1.0)
-                    hit_connection.update_path(self.components, self.connections)
-                    new_points = hit_connection.path
-                    
-                    sens = QPointF(0, 0)
-                    if hit_index < len(base_points) - 1 and hit_index < len(new_points) - 1:
-                        a = (base_points[hit_index] + base_points[hit_index + 1]) / 2
-                        b = (new_points[hit_index] + new_points[hit_index + 1]) / 2
-                        sens = b - a
-                    
-                    setattr(hit_connection, p, old)
-                    mag = sens.x()**2 + sens.y()**2
-                    if mag > best_mag_sq:
-                        best_mag_sq = mag
-                        best_param = p
-                        best_sensitivity = sens
-                
-                hit_connection.path = list(base_points)
-                hit_connection.update_path(self.components, self.connections)
-
-                self.drag_param_name = best_param
-                self.drag_sensitivity = best_sensitivity
-                self.drag_start_param_val = getattr(hit_connection, best_param)
 
                 self.setFocus()
                 self.update()
@@ -297,7 +360,7 @@ class CanvasWidget(QWidget):
             
             if isinstance(curr, ComponentWidget):
                 self.drag_item = curr
-                self.drag_item_start_pos = curr.pos()
+                self.drag_item_start_pos = curr.logical_rect.topLeft()
 
         # Clicked blank
         self.active_connection = None
@@ -314,18 +377,6 @@ class CanvasWidget(QWidget):
             # Don't call super() here because QWidget default doesn't care
             # But sticky notes might? No, they are widgets.
             return super().mouseMoveEvent(event)
-
-        if hasattr(self, "drag_connection") and self.drag_connection:
-            delta = logical_pos - self.drag_start_pos
-            sens_sq = self.drag_sensitivity.x()**2 + self.drag_sensitivity.y()**2
-            
-            if sens_sq > 0.001:
-                dot = delta.x() * self.drag_sensitivity.x() + delta.y() * self.drag_sensitivity.y()
-                change = dot / sens_sq
-                new_val = self.drag_start_param_val + change
-                setattr(self.drag_connection, self.drag_param_name, new_val)
-                self.drag_connection.update_path(self.components, self.connections)
-                self.update()
 
         super().mouseMoveEvent(event)
 
@@ -379,7 +430,8 @@ class CanvasWidget(QWidget):
             self.active_connection.clear_snap_target()
             self.active_connection.current_pos = pos 
 
-        self.active_connection.update_path(self.components, self.connections)
+        routing_cache = getattr(self, "routing_cache", None)
+        self.active_connection.update_path(self.components, self.connections, routing_cache=routing_cache)
         self.update()
 
     def mouseReleaseEvent(self, event):
@@ -387,11 +439,18 @@ class CanvasWidget(QWidget):
         logical_pos = self.get_logical_pos(event.pos())
         self.handle_connection_release(logical_pos)
         self.drag_connection = None
+        self.clear_routing_cache()
 
         if hasattr(self, 'drag_item') and self.drag_item:
-            if self.drag_item.pos() != self.drag_item_start_pos:
-                cmd = MoveCommand(self.drag_item, self.drag_item_start_pos, self.drag_item.pos())
+            moved_comp = self.drag_item
+            if moved_comp.logical_rect.topLeft() != self.drag_item_start_pos:
+                cmd = MoveCommand(moved_comp, self.drag_item_start_pos, moved_comp.logical_rect.topLeft())
                 self.undo_stack.push(cmd)
+
+            # Re-route every connection because the moved component might now be blocking them
+            for conn in self.connections:
+                conn.update_path(self.components, self.connections)
+
             self.drag_item = None
 
         super().mouseReleaseEvent(event)
@@ -400,6 +459,7 @@ class CanvasWidget(QWidget):
         if event.key() == Qt.Key_Escape:
             if self.active_connection:
                 self.active_connection = None
+                self.clear_routing_cache()
                 self.update()
             else:
                 self.deselect_all()
@@ -426,9 +486,11 @@ class CanvasWidget(QWidget):
             cmd = DeleteCommand(self, to_del_comps, all_conns_to_del)
             self.undo_stack.push(cmd)
         
+        self.run_validation()
         self.update()
 
     def handle_connection_release(self, pos):
+        self.clear_routing_cache()
         if self.active_connection:
             if self.active_connection.snap_component:
                 self.active_connection.set_end_grip(
@@ -443,6 +505,7 @@ class CanvasWidget(QWidget):
                 self.undo_stack.push(cmd)
             
             self.active_connection = None
+            self.run_validation()
             self.update()
 
     # ---------------------- PAINT EVENT ----------------------
@@ -457,11 +520,16 @@ class CanvasWidget(QWidget):
         logical_w = int(self.width() / self.zoom_level)
         logical_h = int(self.height() / self.zoom_level)
         
+        
         painter.draw_grid(qp, logical_w, logical_h, app_state.current_theme)
         
-        # Draws connections in logical coords!
-        painter.draw_connections(qp, self.connections, self.components, theme=app_state.current_theme, zoom=self.zoom_level)
-        painter.draw_active_connection(qp, self.active_connection, theme=app_state.current_theme)
+        # PASS 1: DRAW LINES ONLY (behind components)
+        painter.draw_connections(qp, self.connections, self.components, theme=app_state.current_theme, zoom=self.zoom_level, layer="lines")
+        painter.draw_active_connection(qp, self.active_connection, theme=app_state.current_theme, layer="lines")
+        
+        # Trigger overlay update (Pass 2 happens in Overlay.paintEvent)
+        self.overlay.raise_() # Ensure it's on top of components
+        self.overlay.update()
 
     # ---------------------- COMPONENT CREATION ----------------------
     def create_component_command(self, text, pos, component_data=None):
@@ -508,12 +576,20 @@ class CanvasWidget(QWidget):
         suffix = component_data.get('suffix', '')
 
         # Auto-initialize label data for new components (Web-Desktop Sync)
-        if key not in self.label_data and legend:
-            self.label_data[key] = {
-                "legend": legend,
-                "suffix": suffix,
-                "count": 0
-            }
+        if key not in self.label_data:
+            # Local Fallback for specific components with empty API legends
+            if not legend:
+                if key == "inflowline":
+                    legend = "IN"
+                elif key == "outflowline":
+                    legend = "OUT"
+            
+            if legend:
+                self.label_data[key] = {
+                    "legend": legend,
+                    "suffix": suffix,
+                    "count": 0
+                }
 
         if key in self.label_data:
             d = self.label_data[key]
@@ -521,7 +597,7 @@ class CanvasWidget(QWidget):
             # Override with API/CSV data if available
             legend = legend or d['legend']
             suffix = suffix or d['suffix']
-            label_text = f"{legend}{d['count']:02d}{suffix}"
+            label_text = resources.format_component_label(legend, d['count'], suffix)
 
         config["default_label"] = label_text
 
@@ -546,6 +622,21 @@ class CanvasWidget(QWidget):
         
         # Update components logical rect
         comp.logical_rect.moveTo(logical_pos.x(), logical_pos.y())
+        
+        # --- COLLISION PREVENTION ---
+        def has_collision(r):
+            for c in self.components:
+                # Add a small margin to collision detection to prevent components from touching exactly
+                if c.logical_rect.adjusted(-2, -2, 2, 2).intersects(r):
+                    return True
+            return False
+
+        # Shift slightly down-right if there's a collision with an existing component
+        while has_collision(comp.logical_rect):
+            logical_pos += QPoint(20, 20)
+            comp.logical_rect.moveTo(logical_pos.x(), logical_pos.y())
+        # ----------------------------
+
         comp.update_visuals(self.zoom_level)
 
         # Auto-Expand
@@ -553,13 +644,9 @@ class CanvasWidget(QWidget):
         
         # Add Command uses LOGICAL pos?
         # MoveCommand uses Visual? 
-        # CAUTION: Commands usually store what was passed.
-        # If we store logical, we should ensure MoveCommand respects it.
-        # Actually comp is already positioned. AddCommand just tracks it.
         cmd = AddCommand(self, comp, logical_pos)
         self.undo_stack.push(cmd)
-
-    # ---------------------- EXPORT ----------------------
+        self.run_validation()
     def export_to_pdf(self, filename):
         from src.canvas.commands import export_pdf
         export_pdf(self, filename)

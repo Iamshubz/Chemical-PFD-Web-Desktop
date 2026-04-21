@@ -17,11 +17,11 @@ import {
   Card,
   CardBody,
 } from "@heroui/react";
-import { FiDownload, FiPrinter, FiFileText, FiFile, FiGrid } from "react-icons/fi";
+import { FiDownload, FiPrinter, FiFileText, FiFile } from "react-icons/fi";
 import { TbFileSpreadsheet } from "react-icons/tb";
+import * as XLSX from "xlsx";
 
 import { useEditorStore } from "@/store/useEditorStore";
-import * as XLSX from "xlsx";
 
 interface ExportReportModalProps {
   editorId: string;
@@ -37,7 +37,7 @@ interface ReportItem {
   originalItem: any;
 }
 
-type ExportFormat = 'csv' | 'excel' | 'pdf' | 'print';
+type ExportFormat = "csv" | "excel" | "pdf" | "print";
 
 interface FormatOption {
   key: ExportFormat;
@@ -54,7 +54,7 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
   onClose,
 }) => {
   const editorState = useEditorStore((s) => s.editors[editorId]);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('csv');
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
 
   // Transform editor items to report items
   const items = useMemo(() => {
@@ -74,36 +74,38 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
   // Format options
   const formatOptions: FormatOption[] = [
     {
-      key: 'csv',
-      label: 'CSV',
-      description: 'Spreadsheet format',
+      key: "csv",
+      label: "CSV",
+      description: "Spreadsheet format",
       icon: <FiFileText className="text-blue-600 dark:text-blue-400" />,
-      color: 'bg-blue-50 dark:bg-blue-900/20',
-      borderColor: 'border-blue-200 dark:border-blue-800',
+      color: "bg-blue-50 dark:bg-blue-900/20",
+      borderColor: "border-blue-200 dark:border-blue-800",
     },
     {
-      key: 'excel',
-      label: 'Excel',
-      description: 'Advanced formatting',
-      icon: <TbFileSpreadsheet className="text-green-600 dark:text-green-400" />,
-      color: 'bg-green-50 dark:bg-green-900/20',
-      borderColor: 'border-green-200 dark:border-green-800',
+      key: "excel",
+      label: "Excel",
+      description: "Advanced formatting",
+      icon: (
+        <TbFileSpreadsheet className="text-green-600 dark:text-green-400" />
+      ),
+      color: "bg-green-50 dark:bg-green-900/20",
+      borderColor: "border-green-200 dark:border-green-800",
     },
     {
-      key: 'pdf',
-      label: 'PDF',
-      description: 'Print ready',
+      key: "pdf",
+      label: "PDF",
+      description: "Print ready",
       icon: <FiFile className="text-red-600 dark:text-red-400" />,
-      color: 'bg-red-50 dark:bg-red-900/20',
-      borderColor: 'border-red-200 dark:border-red-800',
+      color: "bg-red-50 dark:bg-red-900/20",
+      borderColor: "border-red-200 dark:border-red-800",
     },
     {
-      key: 'print',
-      label: 'Print',
-      description: 'Direct print',
+      key: "print",
+      label: "Print",
+      description: "Direct print",
       icon: <FiPrinter className="text-purple-600 dark:text-purple-400" />,
-      color: 'bg-purple-50 dark:bg-purple-900/20',
-      borderColor: 'border-purple-200 dark:border-purple-800',
+      color: "bg-purple-50 dark:bg-purple-900/20",
+      borderColor: "border-purple-200 dark:border-purple-800",
     },
   ];
 
@@ -142,7 +144,12 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
       [`Generated on: ${new Date().toLocaleDateString()}`, "", "", ""],
       [], // Empty row
       ["Sl No", "Tag No", "Type", "Description"],
-      ...items.map(item => [item.slNo, item.tagNo, item.type, item.description])
+      ...items.map((item) => [
+        item.slNo,
+        item.tagNo,
+        item.type,
+        item.description,
+      ]),
     ];
 
     // Create workbook and worksheet
@@ -151,33 +158,36 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
 
     // Set column widths
     const colWidths = [
-      { wch: 8 },  // Sl No
+      { wch: 8 }, // Sl No
       { wch: 20 }, // Tag No
       { wch: 15 }, // Type
       { wch: 40 }, // Description
     ];
-    ws['!cols'] = colWidths;
+
+    ws["!cols"] = colWidths;
 
     // Add some styling through cell metadata
-    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:D1');
+    const range = XLSX.utils.decode_range(ws["!ref"] || "A1:D1");
 
     // Style header row (row 4, 0-indexed)
     for (let C = range.s.c; C <= range.e.c; ++C) {
       const cellAddress = XLSX.utils.encode_cell({ r: 3, c: C });
+
       if (!ws[cellAddress]) continue;
       ws[cellAddress].s = {
         font: { bold: true, color: { rgb: "FFFFFF" } },
         fill: { fgColor: { rgb: "4F46E5" } }, // Indigo color
-        alignment: { horizontal: "center" }
+        alignment: { horizontal: "center" },
       };
     }
 
     // Style title row
     const titleCell = ws["A1"];
+
     if (titleCell) {
       titleCell.s = {
         font: { bold: true, sz: 16 },
-        alignment: { horizontal: "center" }
+        alignment: { horizontal: "center" },
       };
       // Merge title cells
       ws["!merges"] = ws["!merges"] || [];
@@ -186,10 +196,11 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
 
     // Style date row
     const dateCell = ws["A2"];
+
     if (dateCell) {
       dateCell.s = {
         font: { italic: true },
-        alignment: { horizontal: "center" }
+        alignment: { horizontal: "center" },
       };
       ws["!merges"] = ws["!merges"] || [];
       ws["!merges"].push({ s: { r: 1, c: 0 }, e: { r: 1, c: 3 } });
@@ -199,7 +210,10 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
     XLSX.utils.book_append_sheet(wb, ws, "Equipment Report");
 
     // Generate and download file
-    XLSX.writeFile(wb, `equipment-report-${new Date().toISOString().split("T")[0]}.xlsx`);
+    XLSX.writeFile(
+      wb,
+      `equipment-report-${new Date().toISOString().split("T")[0]}.xlsx`,
+    );
   };
 
   // Handle Print/PDF with better print styling
@@ -250,8 +264,11 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
               <div class="stat-label">Unique Types</div>
             </div>
             <div class="stat-item">
-              <div class="stat-value">${items.filter((i) => i.description && i.description !== "No description").length
-      }</div>
+              <div class="stat-value">${
+                items.filter(
+                  (i) => i.description && i.description !== "No description",
+                ).length
+              }</div>
               <div class="stat-label">With Description</div>
             </div>
           </div>
@@ -267,8 +284,8 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
             </thead>
             <tbody>
               ${items
-        .map(
-          (item) => `
+                .map(
+                  (item) => `
                 <tr>
                   <td>${item.slNo}</td>
                   <td><strong>${item.tagNo}</strong></td>
@@ -276,8 +293,8 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
                   <td>${item.description}</td>
                 </tr>
               `,
-        )
-        .join("")}
+                )
+                .join("")}
             </tbody>
           </table>
           <div class="footer">
@@ -363,8 +380,11 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
               <div class="meta-label">Equipment Types</div>
             </div>
             <div class="meta-item">
-              <div class="meta-value">${items.filter((i) => i.description && i.description !== "No description").length
-      }</div>
+              <div class="meta-value">${
+                items.filter(
+                  (i) => i.description && i.description !== "No description",
+                ).length
+              }</div>
               <div class="meta-label">Documented Items</div>
             </div>
             <div class="meta-item">
@@ -384,8 +404,8 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
             </thead>
             <tbody>
               ${items
-        .map(
-          (item) => `
+                .map(
+                  (item) => `
                 <tr>
                   <td>${item.slNo}</td>
                   <td><strong>${item.tagNo}</strong></td>
@@ -393,8 +413,8 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
                   <td>${item.description}</td>
                 </tr>
               `,
-        )
-        .join("")}
+                )
+                .join("")}
             </tbody>
           </table>
           
@@ -425,16 +445,16 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
   // Handle export based on selected format
   const handleExport = () => {
     switch (exportFormat) {
-      case 'csv':
+      case "csv":
         exportToCSV(items);
         break;
-      case 'excel':
+      case "excel":
         exportToExcel(items);
         break;
-      case 'pdf':
+      case "pdf":
         handlePDFExport();
         break;
-      case 'print':
+      case "print":
         handlePrint();
         break;
     }
@@ -512,16 +532,19 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
                   key={format.key}
                   isHoverable
                   isPressable
-                  className={`cursor-pointer transition-all ${exportFormat === format.key
+                  className={`cursor-pointer transition-all ${
+                    exportFormat === format.key
                       ? `ring-2 ring-blue-500 ${format.color} border-2 ${format.borderColor}`
                       : ""
-                    }`}
+                  }`}
                   onPress={() => handleFormatSelect(format.key)}
                 >
                   <CardBody className="p-3">
                     <div className="flex items-center gap-2">
                       {format.icon}
-                      <span className="text-sm font-medium">{format.label}</span>
+                      <span className="text-sm font-medium">
+                        {format.label}
+                      </span>
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
                       {format.description}
@@ -610,7 +633,8 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
                     CSV Format
                   </label>
                   <div className="text-xs text-gray-500">
-                    Comma-separated values, compatible with all spreadsheet software
+                    Comma-separated values, compatible with all spreadsheet
+                    software
                   </div>
                 </div>
                 <div className="space-y-2">

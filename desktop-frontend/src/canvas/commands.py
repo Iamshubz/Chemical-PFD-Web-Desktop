@@ -44,6 +44,13 @@ class AddConnectionCommand(QUndoCommand):
     def redo(self):
         if self.connection not in self.canvas.connections:
             self.canvas.connections.append(self.connection)
+            
+            # Enable smart auto-routing for new connections
+            if hasattr(self.connection, 'enable_auto_router'):
+                self.connection.enable_auto_router(True)
+                # Recalculate path with auto-routing enabled
+                self.connection.update_path(self.canvas.components, self.canvas.connections)
+            
             self.canvas.update()
 
     def undo(self):
@@ -92,6 +99,10 @@ class MoveCommand(QUndoCommand):
         canvas = self.component.parent()
         z = canvas.zoom_level if hasattr(canvas, "zoom_level") else 1.0
         self.component.update_visuals(z)
+        
+        # Trigger connection re-routing for all connected connections
+        self._update_connected_connections(canvas)
+        
         canvas.update()
 
     def undo(self):
@@ -99,7 +110,27 @@ class MoveCommand(QUndoCommand):
         canvas = self.component.parent()
         z = canvas.zoom_level if hasattr(canvas, "zoom_level") else 1.0
         self.component.update_visuals(z)
+        
+        # Trigger connection re-routing for all connected connections
+        self._update_connected_connections(canvas)
+        
         canvas.update()
+    
+    def _update_connected_connections(self, canvas):
+        """
+        Update all connections attached to this component.
+        Triggers auto-routing and visual path recalculation.
+        
+        Args:
+            canvas: The CanvasWidget containing components and connections
+        """
+        if not hasattr(canvas, 'connections'):
+            return
+        
+        for conn in canvas.connections:
+            # Recalculate connection path of all connections
+            # because this component might have moved into/out of their way
+            conn.update_path(canvas.components, canvas.connections)
 
 
 # ---------------------- FILE OPERATIONS ----------------------

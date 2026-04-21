@@ -1,4 +1,15 @@
+import os
 import sys
+import PyQt5
+
+qt_base = os.path.join(os.path.dirname(PyQt5.__file__), "Qt5")
+os.environ.setdefault("QT_PLUGIN_PATH", os.path.join(qt_base, "plugins"))
+os.environ.setdefault(
+    "QT_QPA_PLATFORM_PLUGIN_PATH",
+    os.path.join(qt_base, "plugins", "platforms"),
+)
+os.environ.setdefault("DYLD_FRAMEWORK_PATH", os.path.join(qt_base, "lib"))
+
 from PyQt5.QtWidgets import QApplication, QStackedWidget
 from PyQt5.QtCore import Qt, QCoreApplication
 
@@ -22,6 +33,8 @@ def main():
     QCoreApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QCoreApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
+    QCoreApplication.setLibraryPaths([os.path.join(qt_base, "plugins")])
+
 
     app = QApplication(sys.argv)
     QApplication.setStyle('Fusion')
@@ -40,8 +53,8 @@ def main():
     welcome = WelcomeScreen()
     login = LoginScreen()
     create = CreateAccScreen()
-    landing = LandingPage()
     canvas = CanvasScreen()
+    landing = LandingPage(canvas_screen=canvas)
 
     app_state.screens = {
     "welcome": welcome,

@@ -14,6 +14,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework.permissions import AllowAny
 from rest_framework.parsers import MultiPartParser, FormParser
+from django.db import transaction
 
 
 @api_view(['GET'])
@@ -66,9 +67,13 @@ class ComponentListView(generics.ListCreateAPIView):
     ordering = ['s_no']
 
     def get_queryset(self):
-        # Allow components created by user OR default components (created_by=None)
-        return Component.objects.filter(
-            Q(created_by=self.request.user) | Q(created_by__isnull=True)
+        return (
+            Component.objects
+            .select_related("created_by")
+            .filter(
+                Q(created_by=self.request.user) |
+                Q(created_by__isnull=True)
+            )
         )
 
     def list(self, request, *args, **kwargs):
@@ -144,7 +149,9 @@ class ProjectListCreateView(generics.ListCreateAPIView):
     serializer_class = ProjectSerializer
 
     def get_queryset(self):
-        return Project.objects.filter(user=self.request.user)
+        return Project.objects.select_related("user").filter(
+            user=self.request.user
+        )
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
@@ -223,79 +230,88 @@ class ProjectDetailView(generics.RetrieveUpdateDestroyAPIView):
         return Response(response_data, status=status.HTTP_200_OK)
 
     # UPDATE (project only)
+
     def update(self, request, *args, **kwargs):
         project = self.get_object()
-        
-        # 1. Update project metadata (standard DRF)
+
         partial = kwargs.pop('partial', False)
         serializer = self.get_serializer(project, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
-        
-        # 2. Handle canvas_state manually
+
         canvas_data = request.data.get("canvas_state")
-        
+
         if canvas_data:
-            from django.db import transaction
-            from .models import CanvasState, Connection 
-            
+            items_data = canvas_data.get("items", [])
+            connections_data = canvas_data.get("connections", [])
+
+            from .models import CanvasState, Connection
+
             with transaction.atomic():
-                # A. Clear existing state
+
+                # Delete existing state
                 CanvasState.objects.filter(project=project).delete()
-                
-                # B. Re-create Items
-                items_data = canvas_data.get("items", [])
-                connections_data = canvas_data.get("connections", [])
-                
-                id_map = {} # old_id -> new_instance_id
+
+                # Bulk create CanvasState
+                new_items = []
+                old_id_order = []
 
                 for item in items_data:
-                    old_id = item.get("id")
                     comp_id = item.get("component_id")
-                    
                     if not comp_id:
-                         continue
-                         
-                    new_item = CanvasState.objects.create(
-                        project=project,
-                        component_id=comp_id,
-                        label=item.get("label", ""),
-                        x=item.get("x", 0),
-                        y=item.get("y", 0),
-                        width=item.get("width", 50),
-                        height=item.get("height", 50),
-                        rotation=item.get("rotation", 0),
-                        scaleX=item.get("scaleX", 1),
-                        scaleY=item.get("scaleY", 1),
-                        sequence=item.get("sequence", 0),
-                    )
-                    
-                    if old_id is not None:
-                        id_map[old_id] = new_item.id
+                        continue
 
-                # C. Re-create Connections
+                    new_items.append(
+                        CanvasState(
+                            project=project,
+                            component_id=comp_id,
+                            label=item.get("label", ""),
+                            x=item.get("x", 0),
+                            y=item.get("y", 0),
+                            width=item.get("width", 50),
+                            height=item.get("height", 50),
+                            rotation=item.get("rotation", 0),
+                            scaleX=item.get("scaleX", 1),
+                            scaleY=item.get("scaleY", 1),
+                            sequence=item.get("sequence", 0),
+                        )
+                    )
+
+                    old_id_order.append(item.get("id"))
+
+                created_items = CanvasState.objects.bulk_create(new_items)
+
+                # Build ID map (old_id -> new_id)
+                id_map = {}
+                for old_id, new_instance in zip(old_id_order, created_items):
+                    if old_id is not None:
+                        id_map[old_id] = new_instance.id
+
+                # Bulk create Connections
+                new_connections = []
+
                 for conn in connections_data:
                     source_old_id = conn.get("sourceItemId")
                     target_old_id = conn.get("targetItemId")
-                    
+
                     real_source_id = id_map.get(source_old_id)
                     real_target_id = id_map.get(target_old_id)
-                    
+
                     if real_source_id and real_target_id:
-                        Connection.objects.create(
-                            sourceItemId_id=real_source_id,
-                            targetItemId_id=real_target_id,
-                            sourceGripIndex=conn.get("sourceGripIndex", 0),
-                            targetGripIndex=conn.get("targetGripIndex", 0),
-                            waypoints=conn.get("waypoints", [])
+                        new_connections.append(
+                            Connection(
+                                sourceItemId_id=real_source_id,
+                                targetItemId_id=real_target_id,
+                                sourceGripIndex=conn.get("sourceGripIndex", 0),
+                                targetGripIndex=conn.get("targetGripIndex", 0),
+                                waypoints=conn.get("waypoints", []),
+                            )
                         )
 
-        # Return the updated project with new canvas state
+                if new_connections:
+                    Connection.objects.bulk_create(new_connections)
+
         return self.retrieve(request, *args, **kwargs)
-
-
-
-
 
     # DELETE
     def destroy(self, request, *args, **kwargs):

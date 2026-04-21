@@ -79,11 +79,17 @@ export interface ComponentLibrarySidebarProps {
 export interface CanvasItemImageProps {
   item: CanvasItem;
   isSelected: boolean;
+  isInvalid?: boolean;
   onSelect: (e?: KonvaEventObject<MouseEvent>) => void; // Strict typing
   onChange: (newAttrs: CanvasItem) => void;
   onDragEnd?: (item: CanvasItem) => void;
   onTransformEnd?: (item: CanvasItem) => void;
-  onGripMouseDown?: (itemId: number, gripIndex: number, x: number, y: number) => void;
+  onGripMouseDown?: (
+    itemId: number,
+    gripIndex: number,
+    x: number,
+    y: number,
+  ) => void;
   onGripMouseEnter?: (itemId: number, gripIndex: number) => void;
   onGripMouseLeave?: () => void;
   isDrawingConnection?: boolean;
@@ -100,7 +106,7 @@ export interface CanvasPropertiesSidebarProps {
   showAllItemsByDefault?: boolean;
 }
 
-// Export image types 
+// Export image types
 
 export interface ExportPreset {
   id: string;
@@ -109,32 +115,30 @@ export interface ExportPreset {
   options: Partial<ExportOptions>;
 }
 
-
-export type ExportFormat = 'png' | 'jpg' | 'pdf' | 'export';
-export type ExportQuality = 'low' | 'medium' | 'high';
+export type ExportFormat = "png" | "jpg" | "pdf" | "export";
+export type ExportQuality = "low" | "medium" | "high";
 export interface ExportOptions {
-  format: 'png' | 'jpg' | 'pdf' | 'export';
+  format: "png" | "jpg" | "pdf" | "export";
   scale: number;
   backgroundColor: string;
   padding: number;
   showGrid: boolean;
   includeGrid: boolean;
-  quality: 'low' | 'medium' | 'high';
+  quality: "low" | "medium" | "high";
   connections?: Connection[];
 }
 
 export const defaultExportOptions: ExportOptions = {
-  format: 'png',
+  format: "png",
   scale: 1, // Changed from 2 to match ExportModal default
-  quality: 'high',
+  quality: "high",
   padding: 20, // Changed from 40 to match ExportModal default
-  backgroundColor: '#ffffff',
+  backgroundColor: "#ffffff",
   includeGrid: false,
   includeWatermark: false,
-  watermarkText: '',
-  filename: 'diagram', // Added
+  watermarkText: "",
+  filename: "diagram", // Added
   showGrid: false,
-
 };
 export interface ExportOptions {
   format: ExportFormat;
@@ -151,54 +155,54 @@ export interface ExportOptions {
 }
 export const exportPresets = [
   {
-    id: 'presentation',
-    name: 'Presentation',
-    description: 'High-res PNG for slides',
+    id: "presentation",
+    name: "Presentation",
+    description: "High-res PNG for slides",
     options: {
-      format: 'png' as ExportFormat,
+      format: "png" as ExportFormat,
       scale: 2,
-      quality: 'high' as ExportQuality,
+      quality: "high" as ExportQuality,
       padding: 40,
-      backgroundColor: '#ffffff',
+      backgroundColor: "#ffffff",
       showGrid: false,
     },
   },
   {
-    id: 'print',
-    name: 'Print',
-    description: 'PDF for printing',
+    id: "print",
+    name: "Print",
+    description: "PDF for printing",
     options: {
-      format: 'pdf' as ExportFormat,
+      format: "pdf" as ExportFormat,
       scale: 3,
-      quality: 'high' as ExportQuality,
+      quality: "high" as ExportQuality,
       padding: 60,
-      backgroundColor: '#ffffff',
+      backgroundColor: "#ffffff",
       showGrid: false,
     },
   },
   {
-    id: 'web',
-    name: 'Web',
-    description: 'Optimized JPG for web',
+    id: "web",
+    name: "Web",
+    description: "Optimized JPG for web",
     options: {
-      format: 'jpg' as ExportFormat,
+      format: "jpg" as ExportFormat,
       scale: 1,
-      quality: 'medium' as ExportQuality,
+      quality: "medium" as ExportQuality,
       padding: 20,
-      backgroundColor: '#ffffff',
+      backgroundColor: "#ffffff",
       showGrid: false,
     },
   },
   {
-    id: 'dark',
-    name: 'Dark Mode',
-    description: 'Dark background export',
+    id: "dark",
+    name: "Dark Mode",
+    description: "Dark background export",
     options: {
-      format: 'png' as ExportFormat,
+      format: "png" as ExportFormat,
       scale: 2,
-      quality: 'high' as ExportQuality,
+      quality: "high" as ExportQuality,
       padding: 40,
-      backgroundColor: '#1e293b',
+      backgroundColor: "#1e293b",
       showGrid: false,
     },
   },
@@ -276,4 +280,3 @@ export interface BackendConnection {
   targetGripIndex: number;
   waypoints: Array<{ x: number; y: number }>;
 }
-

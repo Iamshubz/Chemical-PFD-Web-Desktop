@@ -12,6 +12,7 @@ import {
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { logoutUser } from "../api/auth";
+
 import { ThemeSwitch } from "./theme-switch";
 export const CNavbar = () => {
   const navigate = useNavigate();
@@ -40,31 +41,39 @@ export const CNavbar = () => {
             <p className="font-bold text-inherit text-xl bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
               ChemPFD
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Process Flow Designer</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Process Flow Designer
+            </p>
           </div>
         </NavbarBrand>
 
         <NavbarContent className="hidden sm:flex gap-2" justify="center">
           <NavbarItem isActive={location.pathname === "/dashboard"}>
             <Link
-              color={location.pathname === "/dashboard" ? "primary" : "foreground"}
+              className={`px-4 py-2 rounded-lg transition-all ${
+                location.pathname === "/dashboard"
+                  ? "bg-blue-100 dark:bg-blue-900/30 font-semibold"
+                  : "hover:bg-gray-100 dark:hover:bg-gray-800"
+              }`}
+              color={
+                location.pathname === "/dashboard" ? "primary" : "foreground"
+              }
               href="/dashboard"
-              className={`px-4 py-2 rounded-lg transition-all ${location.pathname === "/dashboard"
-                ? "bg-blue-100 dark:bg-blue-900/30 font-semibold"
-                : "hover:bg-gray-100 dark:hover:bg-gray-800"
-                }`}
             >
               Dashboard
             </Link>
           </NavbarItem>
           <NavbarItem isActive={location.pathname === "/components"}>
             <Link
-              color={location.pathname === "/components" ? "primary" : "foreground"}
+              className={`px-4 py-2 rounded-lg transition-all ${
+                location.pathname === "/components"
+                  ? "bg-blue-100 dark:bg-blue-900/30 font-semibold"
+                  : "hover:bg-gray-100 dark:hover:bg-gray-800"
+              }`}
+              color={
+                location.pathname === "/components" ? "primary" : "foreground"
+              }
               href="/components"
-              className={`px-4 py-2 rounded-lg transition-all ${location.pathname === "/components"
-                ? "bg-blue-100 dark:bg-blue-900/30 font-semibold"
-                : "hover:bg-gray-100 dark:hover:bg-gray-800"
-                }`}
             >
               Components DB
             </Link>
@@ -96,7 +105,7 @@ export const CNavbar = () => {
                       src: "",
                       name: username[0]?.toUpperCase() || "U",
                       isBordered: true,
-                      color: "primary"
+                      color: "primary",
                     }}
                     classNames={{
                       base: "gap-3",

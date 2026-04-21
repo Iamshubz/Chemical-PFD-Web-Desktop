@@ -8,15 +8,18 @@ import {
 } from "react-konva";
 import useImage from "use-image";
 import Konva from "konva";
+import { Rect } from "react-konva";
+
+import { calculateAspectFit } from "../../utils/layout";
 
 import { CanvasItemImageProps } from "./types";
-import { calculateAspectFit } from "../../utils/layout";
 
 const LABEL_OFFSET = 4;
 
 export const CanvasItemImage = ({
   item,
   isSelected,
+  isInvalid,
   onSelect,
   onChange,
   onDragEnd,
@@ -80,16 +83,25 @@ export const CanvasItemImage = ({
   const labelY = item.y + item.height + LABEL_OFFSET;
 
   // Calculate aspect-fit dimensions using shared helper
-  const { x: renderX, y: renderY, width: renderWidth, height: renderHeight } = calculateAspectFit(
+  const {
+    x: renderX,
+    y: renderY,
+    width: renderWidth,
+    height: renderHeight,
+  } = calculateAspectFit(
     item.width,
     item.height,
     image?.naturalWidth || item.naturalWidth,
-    image?.naturalHeight || item.naturalHeight
+    image?.naturalHeight || item.naturalHeight,
   );
 
   // Sync natural dimensions to item state for routing
   useEffect(() => {
-    if (image && (image.naturalWidth !== item.naturalWidth || image.naturalHeight !== item.naturalHeight)) {
+    if (
+      image &&
+      (image.naturalWidth !== item.naturalWidth ||
+        image.naturalHeight !== item.naturalHeight)
+    ) {
       onChange({
         ...item,
         naturalWidth: image.naturalWidth,
@@ -106,14 +118,23 @@ export const CanvasItemImage = ({
         draggable
         height={item.height}
         rotation={item.rotation}
+        scaleX={1}
+        scaleY={1}
         width={item.width}
         x={item.x}
         y={item.y}
-        scaleX={1}
-        scaleY={1}
         onDragEnd={handleDragEnd}
         onTransformEnd={handleTransformEnd}
       >
+        {isInvalid && (
+          <Rect
+            dash={[6, 4]}
+            height={item.height}
+            stroke="red"
+            strokeWidth={2}
+            width={item.width}
+          />
+        )}
         <KonvaImage
           height={renderHeight}
           image={image || undefined}
@@ -133,33 +154,34 @@ export const CanvasItemImage = ({
         fontFamily="Arial, sans-serif"
         fontSize={12}
         listening={false}
+        offsetX={(item.width + 100) / 2} // Center align
         text={labelText}
         width={item.width + 100} // Increase width to prevent wrapping
         x={labelX + item.width / 2}
         y={labelY + 2}
-        offsetX={(item.width + 100) / 2} // Center align
       />
 
       {/* ================= TRANSFORMER ================= */}
       {isSelected && (
         <Transformer
           ref={trRef}
-          rotateEnabled={false} // Disable rotation
-          keepRatio={true} // Enforce aspect ratio scaling
-          flipEnabled={false} // Disable flipping to prevent negative scale issues
-          enabledAnchors={[
-            'top-left',
-            'top-right',
-            'bottom-left',
-            'bottom-right',
-          ]}
           boundBoxFunc={(oldBox, newBox) => {
             // Prevent shrinking too small
             if (newBox.width < 10 || newBox.height < 10) {
               return oldBox;
             }
+
             return newBox;
           }}
+          enabledAnchors={[
+            "top-left",
+            "top-right",
+            "bottom-left",
+            "bottom-right",
+          ]}
+          flipEnabled={false} // Disable flipping to prevent negative scale issues
+          keepRatio={true} // Enforce aspect ratio scaling
+          rotateEnabled={false} // Disable rotation
         />
       )}
 
@@ -167,8 +189,9 @@ export const CanvasItemImage = ({
       {(isSelected || isDrawingConnection) &&
         item.grips?.map((grip, index) => {
           // Grips are positioned relative to the RENDERED image, not the container box
-          const gripX = (item.x + renderX) + (grip.x / 100) * renderWidth;
-          const gripY = (item.y + renderY) + ((100 - grip.y) / 100) * renderHeight;
+          const gripX = item.x + renderX + (grip.x / 100) * renderWidth;
+          const gripY =
+            item.y + renderY + ((100 - grip.y) / 100) * renderHeight;
 
           const isHovered =
             hoveredGrip?.itemId === item.id && hoveredGrip?.gripIndex === index;

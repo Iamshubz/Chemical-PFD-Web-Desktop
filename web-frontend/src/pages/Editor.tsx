@@ -1,58 +1,57 @@
 // Editor.tsx (integrated version)
-import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Stage, Layer, Line, Shape } from "react-konva";
-import Konva from "konva";
+import { Stage, Layer, Shape } from "react-konva";
 import {
   Button,
   Dropdown,
-  DropdownTrigger,
-  DropdownMenu,
   DropdownItem,
-  Tooltip,
-  Switch,
+  DropdownMenu,
+  DropdownTrigger,
   Slider,
+  Switch,
+  Tooltip,
 } from "@heroui/react";
+import Konva from "konva";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
 import {
-  TbLayoutSidebarRightExpand,
-  TbLayoutSidebarRightCollapse,
+  TbFileImport,
   TbLayoutSidebarLeftCollapse,
   TbLayoutSidebarLeftExpand,
-  TbFileImport,
+  TbLayoutSidebarRightCollapse,
+  TbLayoutSidebarRightExpand,
 } from "react-icons/tb";
 import { MdZoomIn, MdZoomOut, MdCenterFocusWeak } from "react-icons/md";
 import { FiDownload } from "react-icons/fi";
 import { Popover, PopoverTrigger, PopoverContent } from "@heroui/react";
 import { TbGridDots, TbGridPattern } from "react-icons/tb";
 
-import { ThemeSwitch } from "@/components/theme-switch";
+import { buildGraph } from "../utils/graph/buildGraph";
+import { validateGraph } from "../utils/graph/validateGraph";
+
 import { CanvasItemImage } from "@/components/Canvas/CanvasItemImage";
-import { ConnectionLine } from "@/components/Canvas/ConnectionLine";
 import {
-  ComponentLibrarySidebar,
   CanvasPropertiesSidebar,
+  ComponentLibrarySidebar,
 } from "@/components/Canvas/ComponentLibrarySidebar";
-import { calculateManualPathsWithBridges } from "@/utils/routing";
-import { useComponents } from "@/context/ComponentContext";
+
 import ExportModal from "@/components/Canvas/ExportModal";
+import { ThemeSwitch } from "@/components/theme-switch";
+import { useComponents } from "@/context/ComponentContext";
+import { calculateManualPathsWithBridges, getGripPosition, getStandoff, smartRoute } from "@/utils/routing";
 // import { exportDiagram, downloadBlob } from "@/utils/exports";
-import { ExportOptions } from "@/components/Canvas/types";
-import { useEditorStore } from "@/store/useEditorStore";
-import {
-  type ComponentItem,
-  type CanvasItem,
-  type Connection,
-} from "@/components/Canvas/types";
 import { ExportReportModal } from "@/components/Canvas/ExportReportModal";
+import { ExportOptions, type CanvasItem, type ComponentItem, type Connection } from "@/components/Canvas/types";
+import { NewProjectModal } from "@/components/NewProjectModal";
+import { SaveConfirmationModal } from "@/components/SaveConfirmationModal";
+import { UnsavedChangesModal } from "@/components/UnsavedChangesModal";
+import { useEditorStore } from "@/store/useEditorStore";
 import {
   createExportData,
   exportToDiagramFile,
   importFromDiagramFile,
   migrateExportData,
 } from "@/utils/diagramExport";
-import { SaveConfirmationModal } from "@/components/SaveConfirmationModal";
-import { UnsavedChangesModal } from "@/components/UnsavedChangesModal";
-import { NewProjectModal } from "@/components/NewProjectModal";
 // import {
 //   getProject,
 //   saveProject,
@@ -61,11 +60,13 @@ import { NewProjectModal } from "@/components/NewProjectModal";
 //   convertToBackendFormat,
 // } from "@/utils/projectStorage";
 import {
+  createProject,
   fetchProject,
   saveProjectCanvas,
-  createProject,
 } from "@/api/projectApi";
 import { convertToBackendFormat, SavedProject } from "@/utils/projectStorage";
+import { ConnectionPreview } from "@/components/Canvas/ConnectionPreview";
+import { ConnectionLine } from "@/components/Canvas/ConnectionLine";
 
 type Shortcut = {
   key: string;
@@ -83,6 +84,7 @@ const resolveImageUrl = (url: string) => {
   // If relative path (e.g. /media/...), prepend backend host
   // Assuming backend is at localhost:8000 based on projectApi.ts
   if (url.startsWith("/")) return `http://localhost:8000${url}`;
+
   return url;
 };
 
@@ -94,8 +96,8 @@ export default function Editor() {
   const [snapToGrid, setSnapToGrid] = useState(true);
 
   const [gridSize, setGridSize] = useState(20);
-  const [componentSize, setComponentSize] = useState(6000); // Component drop size
-  const prevComponentSizeRef = useRef(1500); // Track previous size for scaling
+  const [componentSize, setComponentSize] = useState(1500); // Component drop size
+  const prevComponentSizeRef = useRef(componentSize); // Initialize with current default to prevent unintended scaling on first drop
   // In your state section, add:
   const [isImporting, setIsImporting] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -252,6 +254,19 @@ export default function Editor() {
     return currentState?.connections || [];
   }, [currentState?.connections]);
 
+  // Graph validation state
+  const [validationResult, setValidationResult] = useState<any>(null);
+
+  // Rebuild graph and validate process structure whenever components or connections change
+  useEffect(() => {
+    if (!droppedItems || droppedItems.length === 0) return;
+
+    const graph = buildGraph(droppedItems, connections);
+    const result = validateGraph(graph);
+
+    setValidationResult(result);
+  }, [droppedItems, connections]);
+
   // Update all existing components when size slider changes
   useEffect(() => {
     if (!projectId || droppedItems.length === 0) return;
@@ -386,6 +401,7 @@ export default function Editor() {
 
             if (!img) {
               resolve();
+
               return;
             }
 
@@ -393,6 +409,7 @@ export default function Editor() {
             if (img instanceof HTMLImageElement) {
               if (img.complete && img.naturalWidth > 0) {
                 resolve();
+
                 return;
               }
               img.onload = () => resolve();
@@ -411,6 +428,7 @@ export default function Editor() {
   const handleExport = async (options: ExportOptions) => {
     if (!projectId || !currentState) {
       alert("No project loaded");
+
       return;
     }
 
@@ -441,6 +459,7 @@ export default function Editor() {
 
         exportToDiagramFile(exportData, fileName);
         setShowExportModal(false);
+
         return;
       }
 
@@ -506,6 +525,7 @@ export default function Editor() {
 
       // IMPORTANT: Create a temporary stage clone with fixed background
       const tempContainer = document.createElement("div");
+
       tempContainer.style.position = "absolute";
       tempContainer.style.left = "-9999px";
       tempContainer.style.top = "-9999px";
@@ -529,12 +549,14 @@ export default function Editor() {
           height: stage.height(),
           fill: backgroundFill,
         });
+
         bgLayer.add(bgRect);
         tempStage.add(bgLayer);
       }
 
       // Clone the main layer (skip grid if not needed)
       const originalLayer = stage.findOne("Layer");
+
       if (originalLayer) {
         const clonedLayer = originalLayer.clone({
           listening: false,
@@ -571,6 +593,7 @@ export default function Editor() {
 
         // Create image from data URL
         const img = new Image();
+
         await new Promise((resolve, reject) => {
           img.onload = resolve;
           img.onerror = reject;
@@ -607,6 +630,7 @@ export default function Editor() {
         // Set PDF background color (convert hex to RGB)
         if (backgroundFill !== "rgba(0,0,0,0)") {
           const rgb = hexToRgb(backgroundFill);
+
           if (rgb) {
             pdf.setFillColor(rgb.r, rgb.g, rgb.b);
             pdf.rect(0, 0, pdfWidth, pdfHeight, "F");
@@ -630,6 +654,7 @@ export default function Editor() {
           : `diagram-${Date.now()}${extension}`;
 
         const link = document.createElement("a");
+
         link.download = filename;
         link.href = dataUrl;
         document.body.appendChild(link);
@@ -924,7 +949,14 @@ export default function Editor() {
 
   // --- Helpers ---
   const connectionPaths = useMemo(
-    () => calculateManualPathsWithBridges(connections, droppedItems),
+    () =>
+      calculateManualPathsWithBridges(
+        connections,
+        droppedItems,
+        2000,
+        1500,
+        true,
+      ),
     [connections, droppedItems],
   );
 
@@ -1051,6 +1083,7 @@ export default function Editor() {
 
       // Check if target is an input field
       const target = e.target as HTMLElement;
+
       if (
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
@@ -1242,7 +1275,8 @@ export default function Editor() {
     // Multi-drag support
     // Only apply multi-drag if we are moving (x/y change) but NOT resizing (width/height change)
     // This prevents resizing updates from being swallowed by the batch update which only tracks x/y.
-    const isResizing = updates.width !== undefined || updates.height !== undefined;
+    const isResizing =
+      updates.width !== undefined || updates.height !== undefined;
 
     if (
       !isResizing &&
@@ -1279,6 +1313,19 @@ export default function Editor() {
 
     // Single item update
     editorStore.updateItem(projectId, itemId, snappedUpdates);
+
+    // If the component moved, reset connection waypoints so routing recalculates
+    if (updates.x !== undefined || updates.y !== undefined) {
+      const relatedConnections = connections.filter(
+        (conn) => conn.sourceItemId === itemId || conn.targetItemId === itemId,
+      );
+
+      relatedConnections.forEach((conn) => {
+        editorStore.updateConnection(projectId, conn.id, {
+          waypoints: [],
+        });
+      });
+    }
   };
 
   const handleSelectItem = (
@@ -1324,12 +1371,40 @@ export default function Editor() {
       (tempConnection.sourceItemId !== itemId ||
         tempConnection.sourceGripIndex !== gripIndex)
     ) {
+      const sourceItem = droppedItems.find(
+        (i) => i.id === tempConnection.sourceItemId,
+      );
+      const targetItem = droppedItems.find((i) => i.id === itemId);
+
+      let initialWaypoints = tempConnection.waypoints || [];
+
+      if (initialWaypoints.length === 0 && sourceItem && targetItem) {
+        const start = getGripPosition(
+          sourceItem,
+          tempConnection.sourceGripIndex,
+        );
+        const end = getGripPosition(targetItem, gripIndex);
+        const sourceGrip = sourceItem.grips?.[tempConnection.sourceGripIndex];
+        const targetGrip = targetItem.grips?.[gripIndex];
+
+        if (start && end) {
+          const startStandoff = getStandoff(start, sourceGrip);
+          const endStandoff = getStandoff(end, targetGrip);
+
+          initialWaypoints = smartRoute(
+            startStandoff,
+            endStandoff,
+            droppedItems,
+          );
+        }
+      }
+
       const newConnection = editorStore.addConnection(projectId, {
         sourceItemId: tempConnection.sourceItemId,
         sourceGripIndex: tempConnection.sourceGripIndex,
         targetItemId: itemId,
         targetGripIndex: gripIndex,
-        waypoints: tempConnection.waypoints,
+        waypoints: initialWaypoints,
       });
 
       setIsDrawingConnection(false);
@@ -1370,10 +1445,10 @@ export default function Editor() {
           setTempConnection((prev: any) =>
             prev
               ? {
-                ...prev,
-                currentX: pointer.x,
-                currentY: pointer.y,
-              }
+                  ...prev,
+                  currentX: pointer.x,
+                  currentY: pointer.y,
+                }
               : null,
           );
         }
@@ -1417,54 +1492,97 @@ export default function Editor() {
   };
 
   // Grid Layer Component
-  const GridLayer = React.memo(
-    ({
-      width,
-      height,
-      gridSize,
-      showGrid,
-    }: {
-      width: number;
-      height: number;
-      gridSize: number;
-      showGrid: boolean;
-    }) => {
-      if (!showGrid) return null;
+  const GridLayer = React.memo(function GridLayer({
+    width,
+    height,
+    gridSize,
+    showGrid,
+  }: {
+    width: number;
+    height: number;
+    gridSize: number;
+    showGrid: boolean;
+  }) {
+    if (!showGrid) return null;
 
-      return (
-        <Layer listening={false}>
-          <Shape
-            opacity={0.3}
-            perfectDrawEnabled={false}
-            sceneFunc={(context: any, shape: Konva.Shape) => {
-              context.beginPath();
+    return (
+      <Layer listening={false}>
+        <Shape
+          opacity={0.3}
+          perfectDrawEnabled={false}
+          sceneFunc={(context: any, shape: Konva.Shape) => {
+            context.beginPath();
 
-              const startX = -5000;
-              const endX = width + 5000;
-              const startY = -5000;
-              const endY = height + 5000;
+            const startX = -5000;
+            const endX = width + 5000;
+            const startY = -5000;
+            const endY = height + 5000;
 
-              // Vertical Lines
-              for (let x = startX; x <= endX; x += gridSize) {
-                context.moveTo(x, startY);
-                context.lineTo(x, endY);
-              }
+            // Vertical Lines
+            for (let x = startX; x <= endX; x += gridSize) {
+              context.moveTo(x, startY);
+              context.lineTo(x, endY);
+            }
 
-              // Horizontal Lines
-              for (let y = startY; y <= endY; y += gridSize) {
-                context.moveTo(startX, y);
-                context.lineTo(endX, y);
-              }
+            // Horizontal Lines
+            for (let y = startY; y <= endY; y += gridSize) {
+              context.moveTo(startX, y);
+              context.lineTo(endX, y);
+            }
 
-              context.fillStrokeShape(shape);
-            }}
-            stroke="#9ca3af"
-            strokeWidth={1}
-          />
-        </Layer>
-      );
-    },
-  );
+            context.fillStrokeShape(shape);
+          }}
+          stroke="#9ca3af"
+          strokeWidth={1}
+        />
+      </Layer>
+    );
+  });
+
+  GridLayer.displayName = "GridLayer";
+
+  // --- Preview Connection Logic ---
+  let previewPathData: string | null = null;
+  let previewEnd: any;
+  let previewAngle: number | undefined;
+
+  if (isDrawingConnection && tempConnection) {
+    const fakeTarget = {
+      id: -9999,
+      x: tempConnection.currentX,
+      y: tempConnection.currentY,
+      width: 1,
+      height: 1,
+      naturalWidth: 1,
+      naturalHeight: 1,
+      grips: [{ x: 50, y: 50 }],
+    };
+
+    const previewConn = {
+      id: -1,
+      sourceItemId: tempConnection.sourceItemId,
+      sourceGripIndex: tempConnection.sourceGripIndex,
+      targetItemId: -9999,
+      targetGripIndex: 0,
+      waypoints: tempConnection.waypoints,
+    };
+
+    const map = calculateManualPathsWithBridges(
+      [previewConn as any],
+      [...droppedItems, fakeTarget as any],
+      2000,
+      1500,
+      true,
+    );
+
+    const meta = map[-1];
+
+    if (meta) {
+      previewPathData = meta.pathData ?? null;
+      previewEnd = meta.endPoint;
+      previewAngle = meta.arrowAngle;
+    }
+  }
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -1652,10 +1770,10 @@ export default function Editor() {
           {!leftCollapsed && (
             <ComponentLibrarySidebar
               components={components}
-              initialSearchQuery={searchQuery}
-              selectedCategory={selectedCategory}
-              isLoading={isLoading}
               error={error}
+              initialSearchQuery={searchQuery}
+              isLoading={isLoading}
+              selectedCategory={selectedCategory}
               onCategoryChange={(cat) => setSelectedCategory(cat)}
               onDragStart={handleDragStart}
               onSearch={(q) => setSearchQuery(q)}
@@ -1763,26 +1881,8 @@ export default function Editor() {
             onMouseDown={(e) => {
               const clickedOnEmpty = e.target === e.target.getStage();
 
-              if (clickedOnEmpty && isDrawingConnection && tempConnection) {
-                const stage = stageRef.current;
-
-                if (stage) {
-                  const pointer = stage.getRelativePointerPosition();
-
-                  if (pointer) {
-                    setTempConnection((prev: any) =>
-                      prev
-                        ? {
-                          ...prev,
-                          waypoints: [
-                            ...prev.waypoints,
-                            { x: pointer.x, y: pointer.y },
-                          ],
-                        }
-                        : prev,
-                    );
-                  }
-                }
+              if (clickedOnEmpty && isDrawingConnection) {
+                handleCancelDrawing();
 
                 return;
               }
@@ -1816,69 +1916,125 @@ export default function Editor() {
             />
             <Layer>
               {/* Render Connections */}
-              {connections.map((connection: Connection) => (
-                <ConnectionLine
-                  key={connection.id}
-                  arrowAngle={connectionPaths[connection.id]?.arrowAngle}
-                  connection={connection}
-                  isSelected={selectedConnectionIds.has(connection.id)}
-                  items={droppedItems}
-                  pathData={connectionPaths[connection.id]?.pathData}
-                  points={[]}
-                  targetPosition={connectionPaths[connection.id]?.endPoint}
-                  onSelect={(e: Konva.KonvaEventObject<MouseEvent>) => {
-                    const isCtrl = e?.evt.ctrlKey || e?.evt.metaKey;
+              {connections.map((connection: Connection) => {
+                const savedWaypoints = connection.waypoints || [];
 
-                    setSelectedConnectionIds((prev: Set<number>) => {
-                      const next = new Set(isCtrl ? prev : []);
-
-                      if (isCtrl && prev.has(connection.id)) {
-                        next.delete(connection.id);
-                      } else {
-                        next.add(connection.id);
+                return (
+                  <ConnectionLine
+                    key={connection.id}
+                    arrowAngle={connectionPaths[connection.id]?.arrowAngle}
+                    isSelected={selectedConnectionIds.has(connection.id)}
+                    items={droppedItems}
+                    pathData={connectionPaths[connection.id]?.pathData}
+                    segments={connectionPaths[connection.id]?.segments}
+                    targetPosition={connectionPaths[connection.id]?.endPoint}
+                    onSegmentDragEnd={(segment: any, dx: number, dy: number) => {
+                      if (!projectId) return;
+                      let baseWaypoints = connection.waypoints || [];
+                      
+                      const pathMeta = connectionPaths[connection.id];
+                      if (baseWaypoints.length === 0 && pathMeta?.waypoints) {
+                          baseWaypoints = [...pathMeta.waypoints];
                       }
 
-                      return next;
-                    });
-                    if (!isCtrl) setSelectedItemIds(new Set());
-                  }}
-                />
-              ))}
+                      let modified = false;
+                      const nextWaypoints = baseWaypoints.map((wp: any) => {
+                          const isP1 = Math.abs(wp.x - segment.p1.x) < 2 && Math.abs(wp.y - segment.p1.y) < 2;
+                          const isP2 = Math.abs(wp.x - segment.p2.x) < 2 && Math.abs(wp.y - segment.p2.y) < 2;
+                          
+                          if (isP1 || isP2) {
+                              modified = true;
+                              return {
+                                  x: wp.x + dx,
+                                  y: wp.y + dy
+                              };
+                          }
+                          return wp;
+                      });
+
+                      if (modified) {
+                          editorStore.updateConnection(projectId, connection.id, {
+                              waypoints: nextWaypoints
+                          });
+                      }
+                    }}
+                    onSelect={(e: Konva.KonvaEventObject<MouseEvent>) => {
+                      const isCtrl = e.evt.ctrlKey || e.evt.metaKey;
+
+                      setSelectedConnectionIds((prev: Set<number>) => {
+                        const next = new Set(isCtrl ? prev : []);
+
+                        if (isCtrl && prev.has(connection.id)) {
+                          next.delete(connection.id);
+                        } else {
+                          next.add(connection.id);
+                        }
+
+                        return next;
+                      });
+
+                      if (!isCtrl) setSelectedItemIds(new Set());
+
+                      // Add a waypoint when the user clicks a connection without explicit waypoints
+                      if (projectId && savedWaypoints.length === 0) {
+                        const stage = stageRef.current;
+                        const pointer = stage?.getPointerPosition();
+
+                        if (pointer) {
+                          const snapped = snapToGridPosition(
+                            pointer.x,
+                            pointer.y,
+                          );
+
+                          editorStore.updateConnection(
+                            projectId,
+                            connection.id,
+                            {
+                              waypoints: [snapped],
+                            },
+                          );
+                        }
+                      }
+                    }}
+                  />
+                );
+              })}
 
               {/* Render Temporary Connection Line (Drawing) */}
-              {tempConnection && (
-                <Line
-                  dash={[10, 5]}
-                  listening={false}
-                  points={[
-                    tempConnection.startX,
-                    tempConnection.startY,
-                    ...tempConnection.waypoints.flatMap((p) => [p.x, p.y]),
-                    tempConnection.currentX,
-                    tempConnection.currentY,
-                  ]}
-                  stroke="#9ca3af"
-                  strokeWidth={2}
+              {isDrawingConnection && tempConnection && (
+                <ConnectionPreview
+                  arrowAngle={previewAngle}
+                  endPoint={previewEnd}
+                  pathData={previewPathData}
                 />
               )}
 
               {/* Render Components */}
-              {droppedItems.map((item: CanvasItem) => (
-                <CanvasItemImage
-                  key={item.id}
-                  hoveredGrip={hoveredGrip}
-                  isDrawingConnection={isDrawingConnection}
-                  isSelected={selectedItemIds.has(item.id)}
-                  item={item}
-                  onChange={(newAttrs) =>
-                    handleUpdateItem(newAttrs.id, newAttrs)
-                  }
-                  onGripMouseDown={handleGripMouseDown}
-                  onGripMouseEnter={handleGripMouseEnter}
-                  onGripMouseLeave={handleGripMouseLeave}
-                  onSelect={(e) => handleSelectItem(item.id, e)}
-                />
-              ))}
+              {droppedItems.map((item: CanvasItem) => {
+                const isInvalid =
+                  validationResult &&
+                  (validationResult.isolated.includes(item.id) ||
+                    validationResult.circular.includes(item.id) ||
+                    validationResult.brokenFlow.includes(item.id));
+
+                return (
+                  <CanvasItemImage
+                    key={item.id}
+                    hoveredGrip={hoveredGrip}
+                    isDrawingConnection={isDrawingConnection}
+                    isInvalid={isInvalid}
+                    isSelected={selectedItemIds.has(item.id)}
+                    item={item}
+                    onChange={(newAttrs) =>
+                      handleUpdateItem(newAttrs.id, newAttrs)
+                    }
+                    onGripMouseDown={handleGripMouseDown}
+                    onGripMouseEnter={handleGripMouseEnter}
+                    onGripMouseLeave={handleGripMouseLeave}
+                    onSelect={(e) => handleSelectItem(item.id, e)}
+                  />
+                );
+              })}
             </Layer>
           </Stage>
 
@@ -1957,8 +2113,8 @@ export default function Editor() {
                           "bg-gradient-to-r from-blue-200 to-blue-400 dark:from-blue-800 dark:to-blue-600",
                         thumb: "bg-blue-600 dark:bg-blue-500",
                       }}
-                       maxValue={8000}
-                        minValue={2000}
+                      maxValue={8000}
+                      minValue={2000}
                       size="sm"
                       step={100}
                       value={componentSize}
@@ -2083,8 +2239,7 @@ export default function Editor() {
                 </span>
                 <div className="w-px h-3 bg-white/20" />
                 <span className="text-white/80 text-xs">
-                  Click empty space to add corner • Click target point to finish
-                  • Press Esc to cancel
+                  Click target point to finish • Press Esc to cancel
                 </span>
               </div>
             </div>
@@ -2101,7 +2256,8 @@ export default function Editor() {
                   </span>
                   <div className="w-px h-3 bg-white/20" />
                   <span className="text-white/80 text-xs">
-                    Press 'd' to delete selection • Ctrl+Click to add more
+                    Press &apos;d&apos; to delete selection • Ctrl+Click to add
+                    more
                   </span>
                 </div>
               </div>
@@ -2115,7 +2271,7 @@ export default function Editor() {
                 <div className="text-sm text-gray-400 mt-1">
                   Drag components from the sidebar <br />
                   <span className="font-bold">or</span> drag and drop a .pfd
-                  file started.
+                  file to get started.
                 </div>
               </div>
             </div>
@@ -2186,6 +2342,46 @@ export default function Editor() {
           onClose={() => setShowNewProjectModal(false)}
           onCreate={handleCreateNewProject}
         />
+        {validationResult &&
+          (!validationResult.hasInlet ||
+            !validationResult.hasOutlet ||
+            validationResult.isolated.length > 0 ||
+            validationResult.circular.length > 0 ||
+            validationResult.brokenFlow.length > 0) && (
+            <div className="absolute bottom-6 right-6 bg-white border border-red-300 shadow-xl px-4 py-2 rounded text-sm z-[9999] space-y-1">
+              {!validationResult.hasInlet && (
+                <div className="text-red-600 font-medium">
+                  ⚠ No Inlet Component Found
+                </div>
+              )}
+
+              {!validationResult.hasOutlet && (
+                <div className="text-red-600 font-medium">
+                  ⚠ No Outlet Component Found
+                </div>
+              )}
+
+              {validationResult.isolated.length > 0 && (
+                <div className="text-red-600 font-medium">
+                  ⚠ {validationResult.isolated.length} Isolated Component(s)
+                </div>
+              )}
+
+              {validationResult.circular.length > 0 && (
+                <div className="text-red-600 font-medium">
+                  ⚠ {validationResult.circular.length} Component(s) in Circular
+                  Loop
+                </div>
+              )}
+
+              {validationResult.brokenFlow.length > 0 && (
+                <div className="text-red-600 font-medium">
+                  ⚠ {validationResult.brokenFlow.length} Component(s) with
+                  Broken Flow
+                </div>
+              )}
+            </div>
+          )}
       </div>
     </div>
   );

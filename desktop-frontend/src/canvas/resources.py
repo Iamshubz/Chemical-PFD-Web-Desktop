@@ -1,9 +1,52 @@
 import os
 import json
 import csv
+import re
 
 def clean_string(s):
     return s.lower().translate(str.maketrans("", "", " ,_/-()"))
+
+
+def format_component_label(legend, count, suffix):
+    legend = (legend or "").strip()
+    suffix = (suffix or "").strip()
+
+    if not legend:
+        return ""
+
+    try:
+        number = int(count)
+    except (TypeError, ValueError):
+        return f"{legend}-{count}-{suffix}" if suffix else f"{legend}-{count}"
+
+    return f"{legend}-{number:02d}-{suffix}" if suffix else f"{legend}-{number:02d}"
+
+
+def normalize_component_label(label, legend="", suffix=""):
+    label = (label or "").strip()
+    legend = (legend or "").strip()
+    suffix = (suffix or "").strip()
+
+    if not label:
+        return label
+
+    if "-" in label:
+        return label
+
+    if legend and label.startswith(legend):
+        tail = label[len(legend):]
+        if suffix and tail.endswith(suffix):
+            number_part = tail[:-len(suffix)]
+            if number_part.isdigit():
+                return format_component_label(legend, int(number_part), suffix)
+        if tail.isdigit():
+            return format_component_label(legend, int(tail), suffix)
+
+    match = re.match(r"^([A-Za-z]+)(\d{1,3})([A-Za-z0-9/]+)?$", label)
+    if match:
+        return format_component_label(match.group(1), int(match.group(2)), match.group(3) or "")
+
+    return label
 
 def load_label_data(base_dir):
     label_data = {}
