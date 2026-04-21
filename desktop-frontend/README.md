@@ -71,6 +71,20 @@ python main.py
 
 ---
 
+## Unit Testing
+
+Run desktop frontend unit tests from repository root:
+
+```bash
+python -m pytest desktop-frontend/desktop-frontend-UnitTests -q
+```
+
+For detailed commands and module-level coverage, see:
+
+- `desktop-frontend/desktop-frontend-UnitTests/README.md`
+
+---
+
 ## Project Structure
 
 - **`main.py`**: Entry point of the application.

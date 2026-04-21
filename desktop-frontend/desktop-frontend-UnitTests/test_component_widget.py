@@ -46,10 +46,11 @@ class ComponentWidgetTests(unittest.TestCase):
             cfg = {"grips": [{"x": 0, "y": 50, "side": "left"}]}
             widget = cw.ComponentWidget(svg_path="dummy.svg", config=cfg)
             # set cached svg rect so mapping uses it
-            widget._cached_svg_rect = QRectF(0, 0, 100, 100)
+            widget._cached_svg_rect = QRectF(15, 25, 100, 100)
             p = widget.get_grip_position(0)
             self.assertIsInstance(p, QPoint)
-            self.assertNotEqual(p.x(), 0)
+            self.assertEqual(p.x(), 15)
+            self.assertEqual(p.y(), 75)
 
     def test_to_dict_returns_expected(self):
         with patch("src.component_widget.QSvgRenderer") as MockRenderer:
