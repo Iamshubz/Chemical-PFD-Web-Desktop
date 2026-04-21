@@ -9,7 +9,7 @@ import dj_database_url
 from datetime import timedelta
 import sys
 
-# this is the testing for the CI - 2
+# this is the testing for the CI - 3
 
 # ===============================
 # BASE DIRECTORY
