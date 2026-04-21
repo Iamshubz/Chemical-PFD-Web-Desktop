@@ -131,9 +131,9 @@ WSGI_APPLICATION = "core.wsgi.application"
 
 DEBUG = os.environ.get("DEBUG", "False") == "True"
 
-if DEBUG:
-    # Local database (Docker)
-    DATABASES = {
+
+# Local database (Docker)
+DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": os.environ.get("POSTGRES_DB"),
@@ -141,16 +141,9 @@ if DEBUG:
             "PASSWORD": os.environ.get("POSTGRES_PASSWORD"),
             "HOST": "127.0.0.1",
             "PORT": "5432",
-        }
     }
-else:
-    # Production database (Render)
-    DATABASES = {
-        "default": dj_database_url.config(
-            conn_max_age=600,
-            ssl_require=True
-        )
-    }
+}
+
 
 
 # ===============================
