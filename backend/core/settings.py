@@ -229,14 +229,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # PRODUCTION SECURITY SETTINGS
 # ===============================
 
-if not DEBUG:
+if not DEBUG and 'test' not in sys.argv:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = "DENY"
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-
 # ===============================
 # AXES CONFIGURATION
 # ===============================
