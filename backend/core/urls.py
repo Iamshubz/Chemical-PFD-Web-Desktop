@@ -7,7 +7,7 @@ from django.conf.urls.static import static
 
 
 def home(request):
-    return HttpResponse("Backend is running 🚀")
+    return HttpResponse("Backend is running 🚀--")
 
 urlpatterns = [
     path('', home),

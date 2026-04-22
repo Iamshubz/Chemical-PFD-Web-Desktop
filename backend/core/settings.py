@@ -10,7 +10,6 @@ from datetime import timedelta
 import sys
 
 
-
 # ===============================
 # BASE DIRECTORY
 # ===============================
@@ -33,12 +32,9 @@ environ.Env.read_env(BASE_DIR / ".env")
 # ===============================
 # SECURITY
 # ===============================
-
-SECRET_KEY = env("SECRET_KEY")
-
 DEBUG = env("DEBUG")
+SECRET_KEY = env("SECRET_KEY", default="django-insecure-ci-key")
 GEMINI_API_KEY = env("GEMINI_API_KEY", default="")
-
 ALLOWED_HOSTS = [
     "chemical-pfd-web-desktop.onrender.com",
     "localhost",
@@ -130,28 +126,18 @@ WSGI_APPLICATION = "core.wsgi.application"
 # DATABASE (Render PostgreSQL or Local Docker PostgreSQL)
 # ===============================
 
-DEBUG = os.environ.get("DEBUG", "False") == "True"
-
-if DEBUG:
-    # Local database (Docker)
-    DATABASES = {
+# Local database (Docker)
+DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": os.environ.get("POSTGRES_DB"),
             "USER": os.environ.get("POSTGRES_USER"),
             "PASSWORD": os.environ.get("POSTGRES_PASSWORD"),
-            "HOST": "127.0.0.1",
+            "HOST": os.environ.get("POSTGRES_HOST", "127.0.0.1"),
             "PORT": "5432",
-        }
     }
-else:
-    # Production database (Render)
-    DATABASES = {
-        "default": dj_database_url.config(
-            conn_max_age=600,
-            ssl_require=True
-        )
-    }
+}
+
 
 
 # ===============================
@@ -239,15 +225,15 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ===============================
 # PRODUCTION SECURITY SETTINGS
 # ===============================
+print("DEBUG VALUE:", DEBUG)
 
-if not DEBUG:
+if not DEBUG and 'test' not in sys.argv:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = "DENY"
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-
 # ===============================
 # AXES CONFIGURATION
 # ===============================
