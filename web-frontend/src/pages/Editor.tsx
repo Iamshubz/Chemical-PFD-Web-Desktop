@@ -2528,17 +2528,44 @@ export default function Editor() {
 
                       const normalized = normalizeType(searchText);
 
-                      const match = allComps.find((c: any) => {
+                      let bestMatch = null;
+                      let bestScore = -1;
+
+                      allComps.forEach((c: any) => {
                         const name = c.name?.toLowerCase() || "";
                         const object = c.object?.toLowerCase() || "";
 
-                        return (
+                        let score = 0;
+
+                        // 🔥 Exact match (user gave specific component)
+                        if (name === searchText || object === searchText) {
+                          score = 100;
+                        }
+
+                        // 🔥 Strong partial match (variant match)
+                        else if (
                           name.includes(searchText) ||
-                          object.includes(searchText) ||
+                          object.includes(searchText)
+                        ) {
+                          score = 70;
+                        }
+
+                        // 🔥 Fallback match (normalized type)
+                        else if (
                           name.includes(normalized) ||
                           object.includes(normalized)
-                        );
+                        ) {
+                          score = 40;
+                        }
+
+                        // pick best match
+                        if (score > bestScore) {
+                          bestScore = score;
+                          bestMatch = c;
+                        }
                       });
+
+                      const match = bestMatch;
 
                       if (!match) {
                         console.warn("❌ No match:", aiComp);
