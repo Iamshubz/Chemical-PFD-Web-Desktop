@@ -91,6 +91,7 @@ import {
 import { convertToBackendFormat, SavedProject } from "@/utils/projectStorage";
 import { ConnectionPreview } from "@/components/Canvas/ConnectionPreview";
 import { ConnectionLine } from "@/components/Canvas/ConnectionLine";
+import { matchComponent } from "@/utils/aiMatcher";
 
 type Shortcut = {
   key: string;
@@ -2517,41 +2518,34 @@ export default function Editor() {
                       return t;
                     };
 
-                    // 🔹 Then loop
                     generatedComponents.forEach((aiComp: any) => {
                       const searchText = (aiComp.variant || aiComp.type || "")
+
                         .toString()
+
                         .toLowerCase()
+
                         .trim();
 
                       if (!searchText) return;
 
-                      const normalized = normalizeType(searchText);
-
-                      const match = allComps.find((c: any) => {
-                        const name = c.name?.toLowerCase() || "";
-                        const object = c.object?.toLowerCase() || "";
-
-                        return (
-                          name.includes(searchText) ||
-                          object.includes(searchText) ||
-                          name.includes(normalized) ||
-                          object.includes(normalized)
-                        );
-                      });
+                      const match = matchComponent(searchText, allComps);
 
                       if (!match) {
                         console.warn("❌ No match:", aiComp);
+
                         return;
                       }
 
                       const added = editorStore.addItem(projectId, match, {
                         x: currentX,
+
                         y: defaultY,
                       });
 
                       if (added) {
                         idMapping[aiComp.id] = added.id;
+
                         currentX += 300;
                       }
                     });
@@ -2566,8 +2560,8 @@ export default function Editor() {
                       editorStore.addConnection(projectId, {
                         sourceItemId: source,
                         targetItemId: target,
-                        sourceGripIndex: 0,
-                        targetGripIndex: 0,
+                        sourceGripIndex: 1,
+                        targetGripIndex: 3,
                         waypoints: [],
                       });
                     });
