@@ -1,5 +1,11 @@
+// 🔹 Define proper type (THIS is the key fix)
+export type Component = {
+  name: string;
+  object: string;
+};
+
 // 🔹 Normalize AI text into base category
-export function normalizeType(text: string) {
+export function normalizeType(text: string): string {
   const t = text.toLowerCase();
 
   if (t.includes("pump")) return "pump";
@@ -11,24 +17,27 @@ export function normalizeType(text: string) {
 }
 
 // 🔹 Match AI component to real component
-export function matchComponent(searchText: string, allComps: any[]) {
-  const normalized = normalizeType(searchText);
+export function matchComponent(
+  searchText: string,
+  allComps: Component[]
+): Component | null {
+  const normalized = normalizeType(searchText.toLowerCase());
 
-  let bestMatch = null;
+  let bestMatch: Component | null = null;
   let bestScore = -1;
 
-  allComps.forEach((c: any) => {
-    const name = c.name?.toLowerCase() || "";
-    const object = c.object?.toLowerCase() || "";
+  allComps.forEach((c) => {
+    const name = c.name.toLowerCase();
+    const object = c.object.toLowerCase();
 
     let score = 0;
 
-    // ✅ Exact match (highest priority)
-    if (name === searchText || object === searchText) {
+    // ✅ Exact match
+    if (name === searchText.toLowerCase() || object === searchText.toLowerCase()) {
       score = 100;
     }
     // ✅ Partial match
-    else if (name.includes(searchText) || object.includes(searchText)) {
+    else if (name.includes(searchText.toLowerCase()) || object.includes(searchText.toLowerCase())) {
       score = 70;
     }
     // ✅ Normalized fallback

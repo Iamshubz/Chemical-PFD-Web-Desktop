@@ -26,17 +26,20 @@ describe("normalizeType", () => {
 describe("matchComponent", () => {
   it("returns exact match when available", () => {
     const result = matchComponent("control valve", mockComponents);
-    expect(result.name).toBe("control valve");
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("control valve");
   });
 
   it("returns best match for generic input", () => {
     const result = matchComponent("valve", mockComponents);
-    expect(result.object).toBe("valve");
+    expect(result).not.toBeNull();
+    expect(result!.object).toBe("valve");
   });
 
   it("returns normalized match", () => {
     const result = matchComponent("heat", mockComponents);
-    expect(result.name).toBe("heat exchanger");
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("heat exchanger");
   });
 
   it("returns fallback match when unknown", () => {

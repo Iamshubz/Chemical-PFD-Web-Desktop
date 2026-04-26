@@ -2504,20 +2504,6 @@ export default function Editor() {
                     const generatedComponents = result.components || [];
                     const generatedConnections = result.connections || [];
 
-                    // 🔹 Add components
-                    // 🔹 Define normalize FIRST
-                    const normalizeType = (text: string) => {
-                      const t = text.toLowerCase();
-
-                      if (t.includes("pump")) return "pump";
-                      if (t.includes("valve")) return "valve";
-                      if (t.includes("heat")) return "heat exchanger";
-                      if (t.includes("tank") || t.includes("vessel"))
-                        return "tank";
-
-                      return t;
-                    };
-
                     generatedComponents.forEach((aiComp: any) => {
                       const searchText = (aiComp.variant || aiComp.type || "")
 
@@ -2529,7 +2515,7 @@ export default function Editor() {
 
                       if (!searchText) return;
 
-                      const match = matchComponent(searchText, allComps);
+                      const match = matchComponent(searchText, allComps as any);
 
                       if (!match) {
                         console.warn("❌ No match:", aiComp);
