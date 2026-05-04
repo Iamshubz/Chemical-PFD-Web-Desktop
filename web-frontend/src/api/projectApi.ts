@@ -105,8 +105,8 @@ export const deleteProject = async (id: number): Promise<void> => {
 };
 
 /** POST /ai-generate/ */
-export const generateAIDiagram = async (prompt: string): Promise<any> => {
-  const res = await client.post("/ai-generate/", { prompt });
+export const generateAIDiagram = async (prompt: string, available_components?: string[]): Promise<any> => {
+  const res = await client.post("/ai-generate/", { prompt, available_components });
   return res.data;
 };
 

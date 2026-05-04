@@ -4,89 +4,68 @@ from google.genai import types
 from django.conf import settings
 
 
-def generate_diagram(user_input: str) -> dict:
+def generate_diagram(user_input: str, available_components: list = None) -> dict:
     """
     Takes a natural language prompt and returns a structured JSON dictionary
     representing the components and connections for a Chemical PFD.
     """
 
-    # ✅ 1. Validate API Key
+    # 1. Validate API Key
     api_key = getattr(settings, "GEMINI_API_KEY", None)
     if not api_key:
         raise ValueError("LLM API key is not configured.")
 
     client = genai.Client(api_key=api_key)
 
-    # ✅ 2. IMPROVED SYSTEM PROMPT (CRITICAL FIX)
-    system_prompt = """
-    You are an expert chemical engineering assistant.
+    # Fallback to defaults if not provided
+    if not available_components:
+        available_components = ["pump", "valve", "tank", "heat_exchanger", "compressor", "reactor", "separator"]
 
-    Your task is to convert a user’s process description into a structured
-    process flow diagram JSON.
+    components_str = ", ".join(available_components)
 
-    -------------------------
-    RULES (VERY IMPORTANT)
-    -------------------------
+    # 2. SYSTEM PROMPT
+    system_prompt = f"""
+      You are a system that converts process descriptions into STRICT JSON.
 
-    1. Use realistic industrial components such as:
-       - Pumps (centrifugal pump, reciprocating pump)
-       - Compressors (centrifugal compressor, reciprocating compressor)
-       - Valves (gate valve, globe valve, control valve)
-       - Tanks / vessels (storage tank, vertical vessel, horizontal vessel)
-       - Heat exchangers
-       - Dryers
-       - Separators
-       - Reactors
+      RULES:
+      1. Use ONLY these component types exactly:
+      {components_str}
 
-    2. ALWAYS generate a VARIETY of components.
-       ❌ Do NOT repeat the same type unnecessarily.
+      2. DO NOT use variations or synonyms.
 
-    3. If multiple components exist:
-       ✅ ALL must be connected in a proper sequence
-       Example: c1 → c2 → c3 → c4
+      3. Generate EXACTLY the number of UNIQUE components implied by the input. If a component type is mentioned again (e.g. "tank connected back to pump"), DO NOT create a duplicate component unless explicitly requested. Reuse the existing component's ID to create a feedback loop or complex connection.
 
-    4. Generate at least 4–6 components if possible.
+      4. Each component must have:
+      - id (string, e.g. "c1", "c2"...)
+      - type (string, from allowed list)
+      - label (string)
+      - x (integer, horizontal placement. VARY THIS.)
+      - y (integer, vertical placement. CRITICAL: You MUST use 2D space. DO NOT place all components on the same Y-axis. Arrange them in a cycle, zig-zag, or branched pattern by mixing Y values like 100, 300, 500.)
 
-    5. Each component MUST have:
-       - unique id (c1, c2, c3…)
-       - type (specific, not generic like "pump" → use "centrifugal pump")
-       - label (human readable)
+      5. Connections must accurately represent the flow. Feedback loops and multiple connections to the same component are allowed.
 
-    -------------------------
-    OUTPUT FORMAT (STRICT JSON ONLY)
-    -------------------------
+      6. Every component must be connected. Do NOT skip components.
 
-   {
-  "components": [
-    {
-      "id": "c1",
-      "type": "pump",
-      "variant": "centrifugal pump",
-      "label": "Pump 1"
-    },
-    {
-      "id": "c2",
-      "type": "heat_exchanger",
-      "variant": "shell and tube heat exchanger",
-      "label": "Heat Exchanger"
-    }
-  ],
-  "connections": [
-    { "from": "c1", "to": "c2" }
-  ]
-}
+      7. Output STRICT JSON only.
 
-    -------------------------
-    ERROR CASE
-    -------------------------
+      FORMAT:
+      {{
+        "components": [
+          {{ "id": "c1", "type": "tank", "label": "Main Tank", "x": 100, "y": 300 }},
+          {{ "id": "c2", "type": "pump", "label": "Pump", "x": 300, "y": 100 }}
+        ],
+        "connections": [
+          {{ "from": "c1", "to": "c2" }}
+        ]
+      }}
 
-    If the input is unrelated to process systems, return:
-
-    { "error": "Invalid input. Please describe a process flow involving industrial components." }
+      ERROR:
+      If invalid input:
+      {{ "error": "Invalid process description" }}
     """
 
     try:
-        # ✅ 3. Generate structured JSON response
+        # 3. Generate structured JSON response
         response = client.models.generate_content(
             model="gemini-3-flash-preview",
             contents=user_input,
@@ -99,12 +78,25 @@ def generate_diagram(user_input: str) -> dict:
 
         output_text = response.text.strip()
 
-        # ✅ 4. Parse JSON safely
+        # 4. Parse JSON safely
         parsed_data = json.loads(output_text)
 
-        # ✅ 5. VALIDATION (IMPORTANT FIX)
+        if "error" in parsed_data:
+            return parsed_data
+
+        # 5. VALIDATION
         if "components" not in parsed_data or "connections" not in parsed_data:
             raise ValueError("Invalid AI response structure")
+
+        component_ids = {c.get("id") for c in parsed_data.get("components", []) if c.get("id")}
+        
+        for comp in parsed_data["components"]:
+            if "id" not in comp or "type" not in comp:
+                raise ValueError("Invalid component format")
+                
+        for conn in parsed_data["connections"]:
+            if conn.get("from") not in component_ids or conn.get("to") not in component_ids:
+                raise ValueError("Invalid connection reference")
 
         return parsed_data
 

@@ -336,6 +336,7 @@ def ai_generate(request):
     Returns: Structured JSON for the Canvas UI or an Error message.
     """
     prompt = request.data.get("prompt")
+    available_components = request.data.get("available_components")
     
     # 1. Basic validation
     if not prompt or not isinstance(prompt, str):
@@ -346,7 +347,7 @@ def ai_generate(request):
 
     try:
         # 2. Call the dedicated Gemini service
-        result = generate_diagram(prompt)
+        result = generate_diagram(prompt, available_components)
         
         # 3. Handle graceful LLM rejections
         if "error" in result:
