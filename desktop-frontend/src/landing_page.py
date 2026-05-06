@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QFrame, QSpacerItem, QSizePolicy
+    QPushButton, QFrame, QSpacerItem, QSizePolicy,
+    QMessageBox, QToolButton, QScrollArea
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QEvent
 from PyQt5.QtGui import QFont
@@ -59,6 +60,8 @@ class ActionCard(QFrame):
 class RecentProjectItem(QWidget):
     """A row item showing a recent project."""
     clicked = pyqtSignal(int)  # Changed to emit project ID instead of name
+    edit_requested = pyqtSignal(int)
+    delete_requested = pyqtSignal(int)
 
     def __init__(self, project_id, project_name, last_opened, parent=None):
         super().__init__(parent)
@@ -71,7 +74,7 @@ class RecentProjectItem(QWidget):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(15)
+        layout.setSpacing(14)
 
         # Icon
         icon_label = QLabel("📄")
@@ -93,10 +96,53 @@ class RecentProjectItem(QWidget):
         layout.addLayout(info_layout)
         layout.addStretch()
 
-        # Arrow
-        arrow_label = QLabel("→")
-        arrow_label.setObjectName("recentArrow")
-        layout.addWidget(arrow_label)
+        action_layout = QHBoxLayout()
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(8)
+
+        self.edit_btn = QToolButton()
+        self.edit_btn.setText("Edit")
+        self.edit_btn.setCursor(Qt.PointingHandCursor)
+        self.edit_btn.setObjectName("recentActionEdit")
+        self.edit_btn.setAutoRaise(True)
+        self.edit_btn.setFixedSize(54, 28)
+        self.edit_btn.setStyleSheet(
+            "QToolButton {"
+            "border: 1px solid #d9b39f;"
+            "border-radius: 10px;"
+            "background: rgba(255, 255, 255, 0.62);"
+            "color: #7a4d35;"
+            "font-size: 11px;"
+            "font-weight: 600;"
+            "padding: 2px 8px;"
+            "}"
+            "QToolButton:hover { background: rgba(255, 255, 255, 0.9); }"
+        )
+        self.edit_btn.clicked.connect(lambda: self.edit_requested.emit(self.project_id))
+        action_layout.addWidget(self.edit_btn)
+
+        self.delete_btn = QToolButton()
+        self.delete_btn.setText("Delete")
+        self.delete_btn.setCursor(Qt.PointingHandCursor)
+        self.delete_btn.setObjectName("recentActionDelete")
+        self.delete_btn.setAutoRaise(True)
+        self.delete_btn.setFixedSize(62, 28)
+        self.delete_btn.setStyleSheet(
+            "QToolButton {"
+            "border: 1px solid #e1a8a0;"
+            "border-radius: 10px;"
+            "background: rgba(255, 244, 242, 0.92);"
+            "color: #a14d43;"
+            "font-size: 11px;"
+            "font-weight: 600;"
+            "padding: 2px 8px;"
+            "}"
+            "QToolButton:hover { background: rgba(255, 231, 228, 1); }"
+        )
+        self.delete_btn.clicked.connect(lambda: self.delete_requested.emit(self.project_id))
+        action_layout.addWidget(self.delete_btn)
+
+        layout.addLayout(action_layout)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -190,10 +236,21 @@ class LandingPage(QWidget):
 
         self.recent_container = QFrame()
         self.recent_container.setObjectName("recentContainer")
+        self.recent_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.recent_layout = QVBoxLayout(self.recent_container)
         self.recent_layout.setContentsMargins(0, 0, 0, 0)
         self.recent_layout.setSpacing(0)
-        center_layout.addWidget(self.recent_container)
+
+        self.recent_scroll = QScrollArea()
+        self.recent_scroll.setObjectName("recentScroll")
+        self.recent_scroll.setWidgetResizable(True)
+        self.recent_scroll.setFrameShape(QFrame.NoFrame)
+        self.recent_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.recent_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.recent_scroll.setMinimumHeight(220)
+        self.recent_scroll.setMaximumHeight(320)
+        self.recent_scroll.setWidget(self.recent_container)
+        center_layout.addWidget(self.recent_scroll)
 
 
         # placeholder_projects = [
@@ -275,8 +332,8 @@ class LandingPage(QWidget):
         # Sort by updated_at (most recent first)
         projects.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
         
-        # Show only latest 5 projects
-        for proj in projects[:5]:
+        # Show all projects
+        for index, proj in enumerate(projects):
             project_id = proj.get("id")
             name = proj.get("name", "Untitled Project")
             updated = proj.get("updated_at", "")
@@ -284,12 +341,15 @@ class LandingPage(QWidget):
 
             item = RecentProjectItem(project_id, name, time_label)
             item.clicked.connect(self.on_recent_project_clicked)
+            item.edit_requested.connect(self.on_recent_project_edit_clicked)
+            item.delete_requested.connect(self.on_recent_project_delete_clicked)
             self.recent_layout.addWidget(item)
 
-            divider = QFrame()
-            divider.setFrameShape(QFrame.HLine)
-            divider.setObjectName("divider")
-            self.recent_layout.addWidget(divider)
+            if index < len(projects) - 1:
+                divider = QFrame()
+                divider.setFrameShape(QFrame.HLine)
+                divider.setObjectName("divider")
+                self.recent_layout.addWidget(divider)
 
     def on_recent_project_clicked(self, project_id: int):
         """Handle click on recent project - navigate to canvas and load project."""
@@ -301,6 +361,37 @@ class LandingPage(QWidget):
         # Navigate to canvas screen (index 4)
         print(f"[DEBUG] Navigating to index 4")
         slide_to_index(4, direction=1)
+
+    def on_recent_project_edit_clicked(self, project_id: int):
+        """Edit a recent project by opening it in the canvas screen."""
+        self.on_recent_project_clicked(project_id)
+
+    def on_recent_project_delete_clicked(self, project_id: int):
+        """Delete a recent project after user confirmation."""
+        reply = QMessageBox.question(
+            self,
+            "Delete Project",
+            "Delete this project? This action cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        result = api_client.delete_project(project_id)
+        if result is None:
+            QMessageBox.critical(
+                self,
+                "Delete Project",
+                "Failed to delete the project. Please try again.",
+            )
+            return
+
+        self.load_recent_projects()
+
+        if self.canvas_screen and getattr(app_state, "pending_project_id", None) == project_id:
+            app_state.pending_project_id = None
 
     def on_theme_changed(self, theme):
         """Called when theme changes from theme manager."""
