@@ -3,6 +3,7 @@ File operation and Undo/Redo commands for canvas.
 """
 import os
 from PyQt5.QtWidgets import QUndoCommand, QMessageBox, QFileDialog
+from PyQt5.QtCore import QRectF
 from src.canvas.export import ( load_from_pfd, 
     export_to_image, export_to_pdf, generate_report_pdf,
     export_to_excel, save_canvas_state
@@ -130,6 +131,48 @@ class MoveCommand(QUndoCommand):
         for conn in canvas.connections:
             # Recalculate connection path of all connections
             # because this component might have moved into/out of their way
+            conn.update_path(canvas.components, canvas.connections)
+
+
+class ResizeCommand(QUndoCommand):
+    def __init__(self, component, old_rect, new_rect):
+        super().__init__()
+        self.component = component
+        self.old_rect = old_rect  # Expecting LOGICAL QRectF
+        self.new_rect = new_rect  # Expecting LOGICAL QRectF
+        self.setText(f"Resize {component.config.get('component', 'Component')}")
+
+    def redo(self):
+        self.component.logical_rect = self.new_rect
+        canvas = self.component.parent()
+        z = canvas.zoom_level if hasattr(canvas, "zoom_level") else 1.0
+        self.component.update_visuals(z)
+        
+        # Trigger connection re-routing for all connected connections
+        self._update_connected_connections(canvas)
+        
+        canvas.update()
+
+    def undo(self):
+        self.component.logical_rect = self.old_rect
+        canvas = self.component.parent()
+        z = canvas.zoom_level if hasattr(canvas, "zoom_level") else 1.0
+        self.component.update_visuals(z)
+        
+        # Trigger connection re-routing for all connected connections
+        self._update_connected_connections(canvas)
+        
+        canvas.update()
+    
+    def _update_connected_connections(self, canvas):
+        """
+        Update all connections attached to this component.
+        Triggers auto-routing and visual path recalculation.
+        """
+        if not hasattr(canvas, 'connections'):
+            return
+        
+        for conn in canvas.connections:
             conn.update_path(canvas.components, canvas.connections)
 
 

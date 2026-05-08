@@ -33,6 +33,11 @@ class ComponentWidget(QWidget):
         self.rotation_angle = 0
         self.drag_start_positions = {}
         
+        # Resize tracking
+        self.resize_handle = None  # None, "tl", "tr", "bl", "br"
+        self.resize_start_global = None
+        self.resize_start_rect = None
+        
         # Validation State
         self.is_valid = True
         self.validation_error_msg = ""
@@ -302,6 +307,10 @@ class ComponentWidget(QWidget):
         grips = self.get_grips()
         for idx, grip in enumerate(grips):
             self.draw_dynamic_port(painter, grip, idx, svg_rect)
+        
+        # Draw Resize Handles (only when selected)
+        if self.is_selected:
+            self.draw_resize_handles(painter, svg_rect)
 
     def draw_dynamic_port(self, painter, grip, idx, svg_rect):
         """Draw port based on SVG viewBox coordinate mapping"""
@@ -326,6 +335,24 @@ class ComponentWidget(QWidget):
         painter.setBrush(color)
         painter.setPen(Qt.NoPen)
         painter.drawEllipse(center, scaled_radius, scaled_radius)
+
+    def draw_resize_handles(self, painter, svg_rect):
+        """Draw resize handles at component corners"""
+        s = self.RESIZE_HANDLE_SIZE
+        handle_color = QColor("#60a5fa")  # Light blue
+        
+        handles = {
+            "tl": (svg_rect.left() - s/2, svg_rect.top() - s/2),
+            "tr": (svg_rect.right() - s/2, svg_rect.top() - s/2),
+            "bl": (svg_rect.left() - s/2, svg_rect.bottom() - s/2),
+            "br": (svg_rect.right() - s/2, svg_rect.bottom() - s/2),
+        }
+        
+        painter.setBrush(handle_color)
+        painter.setPen(QPen(QColor("#1e40af"), 1))  # Darker blue border
+        
+        for handle, (x, y) in handles.items():
+            painter.drawRect(QRectF(x, y, s, s))
 
     def get_grip_position(self, idx):
         """Get grip position using SVG coordinate mapping"""
@@ -393,9 +420,51 @@ class ComponentWidget(QWidget):
         self.is_selected = selected
         self.update()
 
+    # ---- RESIZE HANDLE METHODS ----
+    RESIZE_HANDLE_SIZE = 8
+    
+    def get_resize_handle_rect(self, handle):
+        """
+        Get the screen rectangle for a resize handle.
+        handle: "tl", "tr", "bl", "br"
+        """
+        s = self.RESIZE_HANDLE_SIZE
+        content_rect = self.get_content_rect()
+        svg_rect = self.calculate_svg_rect(content_rect)
+        
+        if handle == "tl":
+            return QRectF(svg_rect.left() - s/2, svg_rect.top() - s/2, s, s)
+        elif handle == "tr":
+            return QRectF(svg_rect.right() - s/2, svg_rect.top() - s/2, s, s)
+        elif handle == "bl":
+            return QRectF(svg_rect.left() - s/2, svg_rect.bottom() - s/2, s, s)
+        elif handle == "br":
+            return QRectF(svg_rect.right() - s/2, svg_rect.bottom() - s/2, s, s)
+        return QRectF()
+    
+    def get_resize_handle_at(self, pos):
+        """
+        Check if the given position is over a resize handle.
+        Returns: "tl", "tr", "bl", "br", or None
+        """
+        for handle in ["tl", "tr", "bl", "br"]:
+            if self.get_resize_handle_rect(handle).contains(QPointF(pos)):
+                return handle
+        return None
+
     # MOUSE PRESS
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
+            
+            # CHECK FOR RESIZE HANDLE (if selected)
+            if self.is_selected:
+                self.resize_handle = self.get_resize_handle_at(event.pos())
+                if self.resize_handle:
+                    self.resize_start_global = event.globalPos()
+                    self.resize_start_rect = QRectF(self.logical_rect)
+                    event.accept()
+                    return
 
             # FIRST: CHECK IF CLICKED A PORT – START A CONNECTION
             if self.hover_port is not None:
@@ -452,6 +521,72 @@ class ComponentWidget(QWidget):
                 else:
                     self.parent().update_connection_drag(parent_pos)
             return
+
+        # RESIZE HANDLE DRAGGING
+        if self.resize_handle and self.resize_start_global and self.resize_start_rect:
+            curr_global = event.globalPos()
+            delta = curr_global - self.resize_start_global
+            
+            parent = self.parent()
+            if parent and hasattr(parent, "zoom_level"):
+                z = parent.zoom_level
+                # Convert delta to logical coordinates
+                logical_delta = delta / z
+                
+                # Calculate new dimensions based on handle
+                old_rect = self.resize_start_rect
+                new_rect = QRectF(old_rect)
+                
+                # Maintain aspect ratio (similar to web version with keepRatio=true)
+                min_size = 10  # Minimum size in logical units
+                
+                if self.resize_handle == "br":  # Bottom-right
+                    new_w = max(min_size, old_rect.width() + logical_delta.x())
+                    new_h = max(min_size, old_rect.height() + logical_delta.y())
+                    new_rect.setWidth(new_w)
+                    new_rect.setHeight(new_h)
+                elif self.resize_handle == "bl":  # Bottom-left
+                    new_w = max(min_size, old_rect.width() - logical_delta.x())
+                    new_h = max(min_size, old_rect.height() + logical_delta.y())
+                    new_rect.setLeft(old_rect.left() + (old_rect.width() - new_w))
+                    new_rect.setWidth(new_w)
+                    new_rect.setHeight(new_h)
+                elif self.resize_handle == "tr":  # Top-right
+                    new_w = max(min_size, old_rect.width() + logical_delta.x())
+                    new_h = max(min_size, old_rect.height() - logical_delta.y())
+                    new_rect.setTop(old_rect.top() + (old_rect.height() - new_h))
+                    new_rect.setWidth(new_w)
+                    new_rect.setHeight(new_h)
+                elif self.resize_handle == "tl":  # Top-left
+                    new_w = max(min_size, old_rect.width() - logical_delta.x())
+                    new_h = max(min_size, old_rect.height() - logical_delta.y())
+                    new_rect.setLeft(old_rect.left() + (old_rect.width() - new_w))
+                    new_rect.setTop(old_rect.top() + (old_rect.height() - new_h))
+                    new_rect.setWidth(new_w)
+                    new_rect.setHeight(new_h)
+                
+                self.logical_rect = new_rect
+                self.update_visuals(z)
+                
+                if hasattr(parent, "connections"):
+                    for conn in parent.connections:
+                        if conn.start_component == self or conn.end_component == self:
+                            conn.update_path(parent.components, parent.connections)
+                
+                if parent:
+                    parent.repaint()
+            return
+        
+        # Update resize handle cursor when hovering over selected component
+        if self.is_selected:
+            handle = self.get_resize_handle_at(event.pos())
+            if handle:
+                if handle in ["tl", "br"]:
+                    self.setCursor(Qt.SizeFDiagCursor)
+                elif handle in ["tr", "bl"]:
+                    self.setCursor(Qt.SizeBDiagCursor)
+            else:
+                self.setCursor(Qt.ArrowCursor)
 
         # PORT HOVER DETECTION using SVG coordinate mapping
         pos = event.pos()
@@ -541,6 +676,22 @@ class ComponentWidget(QWidget):
 
     # MOUSE RELEASE
     def mouseReleaseEvent(self, event):
+        # HANDLE RESIZE COMPLETION
+        if self.resize_handle and self.resize_start_rect:
+            from src.canvas.commands import ResizeCommand
+            
+            if self.logical_rect != self.resize_start_rect:
+                # Only push to undo stack if size actually changed
+                stack = self.parent().undo_stack
+                cmd = ResizeCommand(self, self.resize_start_rect, QRectF(self.logical_rect))
+                stack.push(cmd)
+            
+            self.resize_handle = None
+            self.resize_start_global = None
+            self.resize_start_rect = None
+            self.setCursor(Qt.ArrowCursor)
+            return
+        
         # Forward release during connection building
         if hasattr(self.parent(), "active_connection") and self.parent().active_connection:
             g = self.mapToGlobal(event.pos())
