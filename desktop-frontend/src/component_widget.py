@@ -67,7 +67,9 @@ class ComponentWidget(QWidget):
         # Offset by port padding so SVG is centered inside padded widget
         pad = int(self.PORT_PAD * zoom)
         
-        w = max(1, self.width() - pad * 2)
+        extra_w = getattr(self, '_extra_width', 0)
+        
+        w = max(1, self.width() - pad * 2 - extra_w)
         h = max(1, self.height() - pad * 2)
         
         # If label is present, we added extra height to the widget in update_visuals.
@@ -76,7 +78,7 @@ class ComponentWidget(QWidget):
         if self.config.get('default_label'):
              h = max(1, h - self.LABEL_H)
 
-        return QRectF(pad, pad, w, h)
+        return QRectF(pad + extra_w / 2.0, pad, w, h)
     
     def calculate_svg_rect(self, content_rect):
         """
@@ -299,8 +301,9 @@ class ComponentWidget(QWidget):
         if self.config.get('default_label'):
             label_color = Qt.white if app_state.current_theme == "dark" else Qt.black
             painter.setPen(QPen(label_color))
-            # Draw label in the reserved bottom strip
-            text_rect = QRectF(0, self.height() - self.LABEL_H, self.width(), self.LABEL_H)
+            # Keep label visually attached to the rendered SVG body.
+            label_top = max(0.0, min(self.height() - self.LABEL_H, svg_rect.bottom() + 2.0))
+            text_rect = QRectF(0, label_top, self.width(), self.LABEL_H)
             painter.drawText(text_rect, Qt.AlignCenter, self.config['default_label'])
 
         # Draw Ports using SVG coordinate mapping
@@ -537,33 +540,64 @@ class ComponentWidget(QWidget):
                 old_rect = self.resize_start_rect
                 new_rect = QRectF(old_rect)
                 
-                # Maintain aspect ratio (similar to web version with keepRatio=true)
-                min_size = 10  # Minimum size in logical units
+                # Keep ratio like web transformer: vertical-only drags also resize width.
+                min_size = 10.0
+                old_w = max(old_rect.width(), 1.0)
+                old_h = max(old_rect.height(), 1.0)
+                aspect = old_w / old_h
+
+                signs = {
+                    "br": (1.0, 1.0),
+                    "bl": (-1.0, 1.0),
+                    "tr": (1.0, -1.0),
+                    "tl": (-1.0, -1.0),
+                }
+                sx, sy = signs[self.resize_handle]
+
+                raw_w = old_w + sx * logical_delta.x()
+                raw_h = old_h + sy * logical_delta.y()
+                dw = raw_w - old_w
+                dh = raw_h - old_h
+
+                width_driver = abs(dw) / old_w >= abs(dh) / old_h
+                if width_driver:
+                    new_w = max(min_size, raw_w)
+                    new_h = max(min_size, new_w / aspect)
+                else:
+                    new_h = max(min_size, raw_h)
+                    new_w = max(min_size, new_h * aspect)
+
+                old_left = old_rect.left()
+                old_top = old_rect.top()
+                old_right = old_rect.right()
+                old_bottom = old_rect.bottom()
+
+                if self.resize_handle == "br":
+                    new_left = old_left
+                    new_top = old_top
+                elif self.resize_handle == "bl":
+                    new_left = old_right - new_w
+                    new_top = old_top
+                elif self.resize_handle == "tr":
+                    new_left = old_left
+                    new_top = old_bottom - new_h
+                else:  # "tl"
+                    new_left = old_right - new_w
+                    new_top = old_bottom - new_h
+
+                new_rect = QRectF(new_left, new_top, new_w, new_h)
                 
-                if self.resize_handle == "br":  # Bottom-right
-                    new_w = max(min_size, old_rect.width() + logical_delta.x())
-                    new_h = max(min_size, old_rect.height() + logical_delta.y())
-                    new_rect.setWidth(new_w)
-                    new_rect.setHeight(new_h)
-                elif self.resize_handle == "bl":  # Bottom-left
-                    new_w = max(min_size, old_rect.width() - logical_delta.x())
-                    new_h = max(min_size, old_rect.height() + logical_delta.y())
-                    new_rect.setLeft(old_rect.left() + (old_rect.width() - new_w))
-                    new_rect.setWidth(new_w)
-                    new_rect.setHeight(new_h)
-                elif self.resize_handle == "tr":  # Top-right
-                    new_w = max(min_size, old_rect.width() + logical_delta.x())
-                    new_h = max(min_size, old_rect.height() - logical_delta.y())
-                    new_rect.setTop(old_rect.top() + (old_rect.height() - new_h))
-                    new_rect.setWidth(new_w)
-                    new_rect.setHeight(new_h)
-                elif self.resize_handle == "tl":  # Top-left
-                    new_w = max(min_size, old_rect.width() - logical_delta.x())
-                    new_h = max(min_size, old_rect.height() - logical_delta.y())
-                    new_rect.setLeft(old_rect.left() + (old_rect.width() - new_w))
-                    new_rect.setTop(old_rect.top() + (old_rect.height() - new_h))
-                    new_rect.setWidth(new_w)
-                    new_rect.setHeight(new_h)
+                # Check for collisions before applying resized bounds
+                has_collision = False
+                for other in parent.components:
+                    if other != self:
+                        # Enforce the same 35px minimum distance boundary rule as movement
+                        if new_rect.adjusted(-35, -35, 35, 35).intersects(other.logical_rect):
+                            has_collision = True
+                            break
+                            
+                if has_collision:
+                    return
                 
                 self.logical_rect = new_rect
                 self.update_visuals(z)
@@ -792,9 +826,23 @@ class ComponentWidget(QWidget):
         v_y = int(self.logical_rect.y() * zoom_level) - pad
         v_w = int(self.logical_rect.width() * zoom_level) + pad * 2
         v_h = int(self.logical_rect.height() * zoom_level) + pad * 2
+        
+        extra_w = 0
         # Add space for label text below the SVG
         if self.config.get('default_label'):
             v_h += self.LABEL_H
+            
+            # Anti-clipping: Dynamically expand widget width to fit long labels
+            from PyQt5.QtGui import QFontMetrics
+            metrics = QFontMetrics(self.font())
+            text_width = metrics.horizontalAdvance(self.config['default_label'])
+            
+            if text_width > v_w:
+                extra_w = text_width - v_w + 10  # 10px padding for safety
+                v_w += extra_w
+                v_x -= int(extra_w / 2)  # Shift left to keep SVG horizontally centered
+                
+        self._extra_width = extra_w
         
         # Apply
         self.setFixedSize(v_w, v_h)
